@@ -1,0 +1,102 @@
+# The model example-orders.ontology.yaml maps onto (tables in a DuckDB file).
+version: "0.2.0.dev0"
+
+semantic_model:
+  - name: sales
+    description: 订单、客户与商品（orders-200k.duckdb，2024-01 至 2024-06）
+    datasets:
+      - name: orders
+        description: 订单明细，一行一笔订单
+        source: main.orders
+        primary_key: [order_id]
+        fields:
+          - name: order_id
+            description: 订单编号
+            expression: {dialects: [{dialect: ANSI_SQL, expression: order_id}]}
+          - name: customer_id
+            description: 下单客户编号
+            expression: {dialects: [{dialect: ANSI_SQL, expression: customer_id}]}
+          - name: product_id
+            description: 商品编号
+            expression: {dialects: [{dialect: ANSI_SQL, expression: product_id}]}
+          - name: order_date
+            description: 下单日期
+            expression: {dialects: [{dialect: ANSI_SQL, expression: order_date}]}
+            dimension:
+              is_time: true
+          - name: status
+            description: 订单状态（completed 已完成 / cancelled 已取消）
+            expression: {dialects: [{dialect: ANSI_SQL, expression: status}]}
+          - name: amount
+            description: 订单金额
+            expression: {dialects: [{dialect: ANSI_SQL, expression: amount}]}
+
+      - name: customers
+        description: 客户维表
+        source: main.customers
+        primary_key: [customer_id]
+        fields:
+          - name: customer_id
+            description: 客户编号
+            expression: {dialects: [{dialect: ANSI_SQL, expression: customer_id}]}
+          - name: region
+            description: 客户所属区域（north/east/south/west）
+            expression: {dialects: [{dialect: ANSI_SQL, expression: region}]}
+          - name: signup_date
+            description: 客户注册日期
+            expression: {dialects: [{dialect: ANSI_SQL, expression: signup_date}]}
+            dimension:
+              is_time: true
+
+      - name: products
+        description: 商品维表
+        source: main.products
+        primary_key: [product_id]
+        fields:
+          - name: product_id
+            description: 商品编号
+            expression: {dialects: [{dialect: ANSI_SQL, expression: product_id}]}
+          - name: category
+            description: 商品品类（home/electronics/books/toys）
+            expression: {dialects: [{dialect: ANSI_SQL, expression: category}]}
+          - name: unit_cost
+            description: 商品单位成本
+            expression: {dialects: [{dialect: ANSI_SQL, expression: unit_cost}]}
+
+    relationships:
+      - name: orders_to_customers
+        from: orders
+        to: customers
+        from_columns: [customer_id]
+        to_columns: [customer_id]
+      - name: orders_to_products
+        from: orders
+        to: products
+        from_columns: [product_id]
+        to_columns: [product_id]
+
+    metrics:
+      - name: revenue
+        description: 销售额：已完成订单的金额合计，不含已取消订单
+        expression: {dialects: [{dialect: ANSI_SQL, expression: "SUM(CASE WHEN orders.status = 'completed' THEN orders.amount END)"}]}
+      - name: gross_order_amount
+        description: 下单总金额：全部订单金额合计，含已取消订单
+        expression: {dialects: [{dialect: ANSI_SQL, expression: SUM(orders.amount)}]}
+      - name: order_count
+        description: 订单数：全部订单笔数，含已取消订单
+        expression: {dialects: [{dialect: ANSI_SQL, expression: COUNT(orders.order_id)}]}
+      - name: completed_order_count
+        description: 已完成订单数
+        expression: {dialects: [{dialect: ANSI_SQL, expression: "COUNT(CASE WHEN orders.status = 'completed' THEN orders.order_id END)"}]}
+      - name: cancelled_order_count
+        description: 已取消订单数
+        expression: {dialects: [{dialect: ANSI_SQL, expression: "COUNT(CASE WHEN orders.status = 'cancelled' THEN orders.order_id END)"}]}
+      - name: cancellation_rate
+        description: 取消率：已取消订单数 / 全部订单数
+        expression: {dialects: [{dialect: ANSI_SQL, expression: "COUNT(CASE WHEN orders.status = 'cancelled' THEN orders.order_id END) / COUNT(orders.order_id)"}]}
+      - name: avg_order_value
+        description: 客单价：已完成订单的平均金额（销售额 / 已完成订单数）
+        expression: {dialects: [{dialect: ANSI_SQL, expression: "SUM(CASE WHEN orders.status = 'completed' THEN orders.amount END) / COUNT(CASE WHEN orders.status = 'completed' THEN orders.order_id END)"}]}
+      - name: buyer_count
+        description: 下单客户数：有过订单（含取消）的去重客户数
+        expression: {dialects: [{dialect: ANSI_SQL, expression: COUNT(DISTINCT orders.customer_id)}]}

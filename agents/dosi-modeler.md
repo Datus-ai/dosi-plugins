@@ -26,17 +26,22 @@ possibly a dbt project path.
 
 ## Getting the schema
 
-In order of preference:
+Pick the first that applies — do not probe the others:
 
-1. `dosi sql --connection <name> --format json "<query>"` if
-   `dosi sql --help` works (read-only; information_schema / DESCRIBE /
-   `SELECT … LIMIT 5` for samples).
-2. A dbt project: its model `.yml` files (column names and descriptions) and
-   `.sql` files under `models/` — never `profiles.yml`.
-3. Local DuckDB/SQLite file: the warehouse's own CLI if installed
-   (`duckdb <file> -c "DESCRIBE <table>"`).
+1. **Local DuckDB / SQLite file** → its CLI, read-only, all tables in ONE call:
+   `duckdb -readonly <file> -c "SELECT table_name, column_name, data_type FROM information_schema.columns ORDER BY 1, ordinal_position"`,
+   then ONE call for row counts, distinct values of low-cardinality text
+   columns, and min/max of dates and amounts.
+2. **Warehouse, and the session context does not say this dosi lacks `sql`**
+   → `dosi sql --connection <name> --format json "<query>"` (read-only;
+   information_schema / DESCRIBE / `SELECT … LIMIT 5`).
+3. **A dbt project** → its model `.yml` files (column names, descriptions)
+   and `.sql` files under `models/` — never `profiles.yml`.
 4. Otherwise stop and return what you need ("I need the column list of
    table X"), so the main conversation can ask the user.
+
+Write only keys that `references/ossie-authoring.md` shows; dosi rejects
+unknown keys (e.g. there is no `is_dimension` on a field).
 
 ## Writing
 

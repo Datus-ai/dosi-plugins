@@ -16,6 +16,10 @@ the user's own words for the concepts.
 
 ## Rules
 
+> **Start from the complete example** in `${CLAUDE_PLUGIN_ROOT}/skills/dosi-ontology/references/example-orders.ontology.yaml`
+> (with its model `model-orders.yaml`): a validated three-concept ontology with value types,
+> links and every mapping section. Copy its structure; do not browse `dosi info` examples.
+
 - Never open `profiles.yml`, `.env*`, `dosi-connections.yaml`, `agent.yml`,
   `~/.snowsql/*`, `~/.databrickscfg`.
 - Model-first: `dosi/model.yaml` stays the truth. Do not edit it; map onto

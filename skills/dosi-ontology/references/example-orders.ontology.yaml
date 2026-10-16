@@ -1,0 +1,182 @@
+# A complete, validated example: orders / customers / products (model-first).
+# Pair: model-orders.yaml. Check: dosi --model model-orders.yaml --ontology example-orders.ontology.yaml validate
+version: 0.2.0.dev0
+name: Sales
+description: >
+  订单、客户与商品。一笔订单（Order）由一位客户（Customer）下单，购买一件商品（Product）；
+  地区是客户的属性，类目是商品的属性。
+
+ontology:
+# ---------------------------------------------------------------- value types
+- concept: OrderId
+  description: 订单编号
+  type: ValueType
+  extends: [ String ]
+- concept: CustomerId
+  description: 客户编号
+  type: ValueType
+  extends: [ String ]
+- concept: ProductId
+  description: 商品编号
+  type: ValueType
+  extends: [ String ]
+- concept: Region
+  description: 客户所属地区（north/east/south/west）
+  type: ValueType
+  extends: [ String ]
+- concept: Category
+  description: 商品类目（home/electronics/books/toys）
+  type: ValueType
+  extends: [ String ]
+- concept: OrderStatus
+  description: 订单状态（completed 已完成 / cancelled 已取消）
+  type: ValueType
+  extends: [ String ]
+  requires: [ "OrderStatus == 'completed' OR OrderStatus == 'cancelled'" ]
+- concept: Amount
+  description: 订单金额
+  type: ValueType
+  extends: [ Decimal ]
+- concept: UnitCost
+  description: 商品单位成本
+  type: ValueType
+  extends: [ Decimal ]
+
+# --------------------------------------------------------------- entity types
+- concept: Customer
+  description: 客户
+  type: EntityType
+  identify_by: [ id ]
+  relationships:
+  - name: id
+    roles: [ { concept: CustomerId } ]
+    multiplicity: OneToOne
+    verbalizes: [ '{Customer} is identified by {CustomerId}' ]
+  - name: region
+    roles: [ { concept: Region } ]
+    multiplicity: ManyToOne
+    verbalizes: [ '{Customer} is located in {Region}' ]
+  - name: signup_date
+    roles: [ { concept: Date } ]
+    multiplicity: ManyToOne
+    verbalizes: [ '{Customer} signed up on {Date}' ]
+
+- concept: Product
+  description: 商品
+  type: EntityType
+  identify_by: [ id ]
+  relationships:
+  - name: id
+    roles: [ { concept: ProductId } ]
+    multiplicity: OneToOne
+    verbalizes: [ '{Product} is identified by {ProductId}' ]
+  - name: category
+    roles: [ { concept: Category } ]
+    multiplicity: ManyToOne
+    verbalizes: [ '{Product} belongs to {Category}' ]
+  - name: unit_cost
+    roles: [ { concept: UnitCost } ]
+    multiplicity: ManyToOne
+    verbalizes: [ '{Product} costs {UnitCost} per unit' ]
+
+- concept: Order
+  description: 订单，一行一笔
+  type: EntityType
+  identify_by: [ id ]
+  relationships:
+  - name: id
+    roles: [ { concept: OrderId } ]
+    multiplicity: OneToOne
+    verbalizes: [ '{Order} is identified by {OrderId}' ]
+  - name: placed_by
+    roles: [ { concept: Customer } ]
+    multiplicity: ManyToOne
+    verbalizes: [ '{Order} is placed by {Customer}', '{Customer} places {Order}' ]
+  - name: purchases
+    roles: [ { concept: Product } ]
+    multiplicity: ManyToOne
+    verbalizes: [ '{Order} purchases {Product}', '{Product} is purchased in {Order}' ]
+  - name: order_date
+    roles: [ { concept: Date } ]
+    multiplicity: ManyToOne
+    verbalizes: [ '{Order} was placed on {Date}' ]
+  - name: status
+    roles: [ { concept: OrderStatus } ]
+    multiplicity: ManyToOne
+    verbalizes: [ '{Order} has status {OrderStatus}' ]
+  - name: amount
+    roles: [ { concept: Amount } ]
+    multiplicity: ManyToOne
+    verbalizes: [ '{Order} is worth {Amount}' ]
+
+ontology_mappings:
+- name: sales_duckdb
+  semantic_model:
+    name: sales
+    datasets:
+    - name: orders
+      source: main.orders
+      fields:
+      - { name: order_id, expression: { dialects: [ { dialect: ANSI_SQL, expression: order_id } ] } }
+      - { name: customer_id, expression: { dialects: [ { dialect: ANSI_SQL, expression: customer_id } ] } }
+      - { name: product_id, expression: { dialects: [ { dialect: ANSI_SQL, expression: product_id } ] } }
+      - { name: order_date, expression: { dialects: [ { dialect: ANSI_SQL, expression: order_date } ] } }
+      - { name: status, expression: { dialects: [ { dialect: ANSI_SQL, expression: status } ] } }
+      - { name: amount, expression: { dialects: [ { dialect: ANSI_SQL, expression: amount } ] } }
+    - name: customers
+      source: main.customers
+      fields:
+      - { name: customer_id, expression: { dialects: [ { dialect: ANSI_SQL, expression: customer_id } ] } }
+      - { name: region, expression: { dialects: [ { dialect: ANSI_SQL, expression: region } ] } }
+      - { name: signup_date, expression: { dialects: [ { dialect: ANSI_SQL, expression: signup_date } ] } }
+    - name: products
+      source: main.products
+      fields:
+      - { name: product_id, expression: { dialects: [ { dialect: ANSI_SQL, expression: product_id } ] } }
+      - { name: category, expression: { dialects: [ { dialect: ANSI_SQL, expression: category } ] } }
+      - { name: unit_cost, expression: { dialects: [ { dialect: ANSI_SQL, expression: unit_cost } ] } }
+  concept_mappings:
+  - concept: Customer
+    object_mappings:
+    - referent_mappings:
+      - { relationship: id, expression: customers.customer_id }
+    link_mappings:
+    - object_mapping:
+        referent_mappings:
+        - { relationship: id, expression: customers.customer_id }
+      children:
+      - { object_mapping: { concept: Region, expression: customers.region }, relationship: region }
+      - { object_mapping: { concept: Date, expression: customers.signup_date }, relationship: signup_date }
+  - concept: Product
+    object_mappings:
+    - referent_mappings:
+      - { relationship: id, expression: products.product_id }
+    link_mappings:
+    - object_mapping:
+        referent_mappings:
+        - { relationship: id, expression: products.product_id }
+      children:
+      - { object_mapping: { concept: Category, expression: products.category }, relationship: category }
+      - { object_mapping: { concept: UnitCost, expression: products.unit_cost }, relationship: unit_cost }
+  - concept: Order
+    object_mappings:
+    - referent_mappings:
+      - { relationship: id, expression: orders.order_id }
+    link_mappings:
+    - object_mapping:
+        referent_mappings:
+        - { relationship: id, expression: orders.order_id }
+      children:
+      - object_mapping:
+          concept: Customer
+          referent_mappings:
+          - { relationship: id, expression: orders.customer_id }
+        relationship: placed_by
+      - object_mapping:
+          concept: Product
+          referent_mappings:
+          - { relationship: id, expression: orders.product_id }
+        relationship: purchases
+      - { object_mapping: { concept: Date, expression: orders.order_date }, relationship: order_date }
+      - { object_mapping: { concept: OrderStatus, expression: orders.status }, relationship: status }
+      - { object_mapping: { concept: Amount, expression: orders.amount }, relationship: amount }

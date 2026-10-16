@@ -101,7 +101,7 @@ ctx="[dosi] 阶段 $stage · $where${found:+ · 发现：$found}
 [dosi] 下一步：$next
 [dosi] 规则：数据问题用 dosi 的指标或 select 回答，不要手写 SQL 查模型已覆盖的表；展示生成的 SQL；不要打开 profiles.yml、.env、dosi-connections.yaml；错误按「发生了什么 / 原因 / 下一步」转述。"
 [ "$caps" = no-migrate ] && ctx="$ctx
-[dosi] 这个 dosi 版本没有 migrate / connection 命令：不要调用它们。本地文件直接写 dosi-connections.yaml；数仓按 dosi-connect 的手动路径（${VAR} 模板）。"
+[dosi] 这个 dosi 版本没有 migrate / connection / sql 命令：不要调用或探测它们。本地文件直接写 dosi-connections.yaml；数仓按 dosi-connect 的手动路径（${VAR} 模板）。"
 case "$stage" in
   S0|S1|S2|S3) ctx="$ctx
 [dosi] 当前阶段不要主动提 ontology，除非用户自己问到。" ;;

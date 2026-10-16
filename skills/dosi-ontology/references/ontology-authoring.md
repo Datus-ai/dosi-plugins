@@ -1,5 +1,9 @@
 # Writing an ontology for dosi (model-first)
 
+> **Start from the complete example** in `${CLAUDE_PLUGIN_ROOT}/skills/dosi-ontology/references/example-orders.ontology.yaml`
+> (with its model `model-orders.yaml`): a validated three-concept ontology with value types,
+> links and every mapping section. Copy its structure; do not browse `dosi info` examples.
+
 Model-first: `dosi/model.yaml` stays the source of truth for tables, fields
 and joins; `dosi/ontology.yaml` adds concepts on top. Load both:
 `dosi --model dosi/model.yaml --ontology dosi/ontology.yaml …` (the session

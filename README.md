@@ -45,34 +45,102 @@ Say this to Codex, DeepSeek Harness, Gemini CLI, Grok, Cursor, or any other agen
 
 The agent installs dosi and the skills in the way that agent supports.
 
-## First five minutes
+## Tutorial: from zero to ontology in 10 minutes
 
-Start in a project folder that has your dbt project, a Cube `.env`, or a local
-`.duckdb` file. Then ask:
+Use the sample dataset (200k orders, with customers and products) in an empty folder:
 
-> 上个月各渠道收入多少？ / What was revenue by channel last month?
+```bash
+mkdir dosi-try && cd dosi-try
+curl -fsSLO https://dosi.datus.ai/orders-200k.duckdb
+claude
+```
 
-What happens next:
+Then type each prompt below in order. Every step was run end to end, and
+the times are measured. At any point, `/dosi` shows where you are and what
+to try next.
 
-1. **Connect.** The plugin detects your dbt or Cube settings and asks you to
-   pick a connection. If it finds none, it asks where your data lives.
-   Passwords never pass through the chat. When a variable is missing, you set
-   it yourself with `! export NAME=...`.
-2. **Model.** You choose how much to model. The default is only the tables
-   this question needs, which takes about 2 minutes. A subagent writes
-   `dosi/model.yaml` and validates it. It asks only about real business
-   ambiguities, such as "should revenue exclude refunds?".
-3. **Answer.** You get a table, plus the exact SQL that dosi compiled and ran.
+### 1. Connect, about 10 s
 
-You can ask follow-ups in plain language. Some features appear only when
-they become useful:
+> 帮我连上数据 / Connect to my data
 
-| Ask | You get |
+The plugin finds `orders-200k.duckdb` and connects with no questions.
+Expected: `✓ 已连接 local（duckdb，orders-200k.duckdb）`.
+
+With your own data, this is where it detects your dbt project or Cube
+`.env` and asks which connection to use (see [Your own data](#your-own-data)).
+
+### 2. Build a semantic model, about 1 min
+
+> 给这些数据建一个语义模型 / Build a semantic model for this data
+
+A subagent reads the schema, writes `dosi/model.yaml` (Apache Ossie) and
+validates it. Expected: 3 datasets, 2 relationships and about 9 metrics.
+You then get **at most three questions** about business meaning, for
+example "should revenue include cancelled orders?". Each comes with a
+recommended answer; pick one or say "按推荐的来" (use the recommendations).
+
+### 3. Ask with metrics, about 15 s
+
+> 各地区每个月的销售额是多少？ / Revenue by region and month?
+
+Expected: a table, a one-line footer with the source and row count, and the
+SQL dosi compiled. Ask follow-ups freely: "只看 north", "按周看", "环比呢".
+
+### 4. See how a number is computed, about 15 s
+
+> 销售额是怎么算出来的？ / How is revenue calculated?
+
+Expected: a lineage tree in the chat (table → dataset → metric), plus a
+full interactive lineage page written locally. It opens in your browser
+when one is available; otherwise you get the file path.
+
+### 5. Ask for records, about 20 s
+
+> 列出金额最大的 10 个订单，带上客户地区和商品类目
+> / List the 10 largest orders with customer region and product category
+
+Expected: row-level results through `dosi select`, with joins chosen for
+you. Then try another entity question:
+
+> 哪些客户下单次数最多？ / Which customers order the most?
+
+### 6. Build an ontology when it is offered, about 1.5 min
+
+After a couple of entity questions, the plugin offers an ontology **once**:
+
+> 你的问题涉及多个业务实体。建一个 ontology，按业务概念来问会更准，要了解一下吗？
+
+Answer `了解一下` (tell me more). A subagent drafts `dosi/ontology.yaml`
+with the concepts Customer, Order and Product and their links, validates it,
+and asks only if something is genuinely ambiguous. If you answer
+"以后再说" (later), it asks again only after 10 more questions.
+
+### 7. Ask by business concept, about 20 s
+
+> 每个商品类目下，哪个地区的客户买得最多？
+> / In each product category, which region's customers buy the most?
+
+Expected: the answer is computed through concept paths such as
+`Order.placed_by.region` and `Order.purchases.category`, which you can
+reuse in later questions.
+
+## Your own data
+
+Start Claude Code in your project folder and just ask a data question. The
+plugin behaves the same way as in the tutorial, with one difference in
+step 1:
+
+| What the folder has | What step 1 does |
 |---|---|
-| "How is revenue calculated?" | Metric lineage: a tree in the chat, plus a local HTML graph |
-| "Which customers…" / "List the…" | Row-level detail through `dosi select` |
-| (after several entity questions) | A single offer to build an ontology, so you can ask by business concept |
-| `/dosi` | Your current stage, connection and model status, and the next step |
+| a dbt project (`dbt_project.yml`, `~/.dbt/profiles.yml`) | Converts your profiles with `dosi migrate conf` and asks which target to use. The project's current target is recommended |
+| a Cube `.env` | Converts the `CUBEJS_DB_*` settings the same way |
+| `.duckdb` / `.sqlite` files | Connects directly, as in the tutorial |
+| nothing | Asks where your data lives, then writes a connection whose secrets are `${VAR}` references |
+
+Claude never sees your passwords. When a variable is missing, you set it
+yourself with `! export NAME=...`. Browser-SSO logins
+(`authenticator: externalbrowser`) are not supported yet; use key-pair
+auth or a password variable instead.
 
 ## What's inside
 
