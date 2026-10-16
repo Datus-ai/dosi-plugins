@@ -1,0 +1,140 @@
+#!/bin/sh
+# dosi-progress — the progressive-disclosure engine (RFC §3.2, §6.4).
+#
+# Per-project state lives in <plugin data>/progress/<hash>.state as
+# key=value lines. Hooks `record` what happened; skills ask `next` at the end
+# of an answer and append what it prints, verbatim, or nothing at all.
+#
+#   dosi-progress stage                 print S0..S6
+#   dosi-progress next                  at most one one-time hint:
+#                                         HINT: <text>
+#                                         ASK: <question> | <opt1> | <opt2> | <opt3>
+#                                       (prints nothing when there is none)
+#   dosi-progress peek                  what `next` would print, without using it up
+#   dosi-progress answer <ask> <yes|later|never>
+#   dosi-progress record <event> [n]    connected | model | answered | select |
+#                                       ambiguous | lineage | ontology |
+#                                       entity_question | datasets <n> | relationships <n>
+#   dosi-progress dismiss <hint>        never show that hint again
+#   dosi-progress status                the raw state, for /dosi and debugging
+self_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+DOSI_LIB_ROOT=${DOSI_LIB_ROOT:-$(dirname -- "$self_dir")}
+. "$DOSI_LIB_ROOT/hooks/lib.sh"
+
+proj=$(dosi_project)
+dir="$(dosi_data)/progress"
+mkdir -p "$dir"
+file="$dir/$(printf '%s' "$proj" | cksum | awk '{print $1}').state"
+[ -f "$file" ] || printf 'project=%s\n' "$proj" > "$file"
+
+get() { sed -n "s/^$1=//p" "$file" | tail -n 1; }
+num() { v=$(get "$1"); printf '%s\n' "${v:-0}"; }
+set_() {
+  tmp="$file.$$"
+  grep -v "^$1=" "$file" > "$tmp" 2>/dev/null
+  printf '%s=%s\n' "$1" "$2" >> "$tmp"
+  mv "$tmp" "$file"
+}
+incr() { set_ "$1" $(( $(num "$1") + ${2:-1} )); }
+
+# S4 thresholds (RFC Q5: start here, calibrate with eval E4).
+S4_MIN_DATASETS=3
+S4_MIN_SELECTS=2
+
+ontology_ready() {
+  [ "$(num model)" -ge 1 ] || return 1
+  [ "$(num datasets)" -ge "$S4_MIN_DATASETS" ] || return 1
+  [ "$(num relationships)" -ge 1 ] || return 1
+  [ "$(num selects)" -ge "$S4_MIN_SELECTS" ] \
+    || [ "$(num ambiguous)" -ge 1 ] \
+    || [ "$(num entity_questions)" -ge 2 ]
+}
+
+stage() {
+  if [ "$(num ontology)" -ge 1 ]; then echo S5
+  elif ontology_ready; then echo S4
+  elif [ "$(num lineage)" -ge 1 ]; then echo S3
+  elif [ "$(num model)" -ge 1 ]; then echo S2
+  elif [ "$(num connected)" -ge 1 ]; then echo S1
+  else echo S0
+  fi
+}
+
+# A hint may show when it has not been shown, was not dismissed, and (for a
+# "later") the user has asked enough new questions since.
+may_show() {
+  [ "$(num "never_$1")" -ge 1 ] && return 1
+  after=$(get "after_$1")
+  if [ -n "$after" ]; then
+    [ "$(num answered)" -ge "$after" ] || return 1
+    return 0
+  fi
+  [ "$(num "shown_$1")" -ge 1 ] && return 1
+  return 0
+}
+
+shown() { [ -n "${PEEK:-}" ] && return 0; set_ "shown_$1" 1; grep -v "^after_$1=" "$file" > "$file.$$"; mv "$file.$$" "$file"; }
+
+in_git_repo() { git -C "$proj" rev-parse --is-inside-work-tree >/dev/null 2>&1; }
+
+next() {
+  if [ "$(num ontology)" -ge 1 ] && may_show h_ontology_ready; then
+    shown h_ontology_ready
+    echo "HINT: 现在可以直接按业务概念提问了，比如「客户常去哪些门店」；想看概念关系图也可以说一声。"
+    return
+  fi
+  if [ "$(num ontology)" -lt 1 ] && ontology_ready && may_show h_ontology; then
+    shown h_ontology
+    echo "ASK: 你的问题涉及多个业务实体。建一个 ontology，按业务概念来问会更准，要了解一下吗？ | 了解一下 | 以后再说 | 不再提示"
+    echo "(answer with: dosi-progress answer h_ontology yes|later|never)"
+    return
+  fi
+  if [ "$(num answered)" -ge 1 ] && [ "$(num lineage)" -lt 1 ] && may_show h_lineage; then
+    shown h_lineage
+    echo "HINT: 这个数是按模型里定义的指标算的，想看它是怎么算出来的可以问我。"
+    return
+  fi
+  if [ "$(num model)" -ge 1 ] && [ "$(num stable_sessions)" -ge 3 ] && in_git_repo && may_show h_team; then
+    shown h_team
+    echo "ASK: 模型已经稳定了一阵，要把 dosi/ 提交给团队共享吗？ | 提交 | 以后再说 | 不再提示"
+    echo "(answer with: dosi-progress answer h_team yes|later|never)"
+    return
+  fi
+}
+
+cmd=${1:-status}
+[ $# -gt 0 ] && shift
+case "$cmd" in
+  stage) stage ;;
+  next) next ;;
+  peek) PEEK=1 next ;;
+  answer)
+    case "${2:-}" in
+      never) set_ "never_$1" 1 ;;
+      later) set_ "after_$1" $(( $(num answered) + 10 )) ;;
+      *) : ;;
+    esac ;;
+  dismiss) set_ "never_$1" 1 ;;
+  record)
+    ev=${1:?event}
+    case "$ev" in
+      connected|model|lineage|ontology) set_ "$ev" 1 ;;
+      answered) incr answered ;;
+      select) incr selects ;;
+      ambiguous) incr ambiguous ;;
+      entity_question) incr entity_questions ;;
+      datasets|relationships) set_ "$ev" "${2:-0}" ;;
+      session)
+        # Model stability for S6: count sessions that start with an
+        # unchanged model file.
+        m="$proj/dosi/model.yaml"
+        if [ -f "$m" ]; then
+          sig=$(cksum < "$m" | awk '{print $1}')
+          if [ "$sig" = "$(get model_sig)" ]; then incr stable_sessions
+          else set_ model_sig "$sig"; set_ stable_sessions 0; fi
+        fi ;;
+      *) echo "dosi-progress: unknown event $ev" >&2; exit 2 ;;
+    esac ;;
+  status) echo "stage=$(stage)"; cat "$file" ;;
+  *) echo "usage: dosi-progress stage|next|answer|record|dismiss|status" >&2; exit 2 ;;
+esac

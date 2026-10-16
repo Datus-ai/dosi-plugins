@@ -1,0 +1,16 @@
+{
+  "name": "dosi-plugins",
+  "owner": {
+    "name": "Datus AI"
+  },
+  "metadata": {
+    "description": "Dosi semantic layer plugins for coding agents: metrics, lineage and ontology over your warehouse, fully local."
+  },
+  "plugins": [
+    {
+      "name": "dosi",
+      "source": "./",
+      "description": "Dosi semantic layer for Claude Code — metrics, lineage and ontology over your warehouse, fully local."
+    }
+  ]
+}

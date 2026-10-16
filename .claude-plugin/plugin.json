@@ -1,0 +1,10 @@
+{
+  "name": "dosi",
+  "version": "0.1.13",
+  "description": "Dosi semantic layer in Claude Code: connect a warehouse, generate an Apache Ossie model, ask questions through metrics, see lineage, and (when you need it) build an ontology. Runs fully local.",
+  "author": { "name": "Datus AI" },
+  "homepage": "https://dosi.datus.ai",
+  "repository": "https://github.com/Datus-ai/dosi-plugins",
+  "license": "Elastic-2.0",
+  "keywords": ["semantic-layer", "metrics", "ossie", "ontology", "sql", "data"]
+}
