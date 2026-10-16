@@ -6,6 +6,10 @@ Ask your data questions inside Claude Code (and other coding agents) through
 governed metrics, see lineage — and, when you need it, build an ontology.
 Everything runs on your machine.
 
+> **Preview.** Importing dbt / Cube connection settings needs `dosi migrate conf`,
+> which ships in the next dosi release; until then the plugin falls back to a
+> guided manual connection.
+
 ## Install
 
 Claude Code — type at the prompt:
