@@ -20,24 +20,44 @@ deny() {
   exit 2
 }
 
-# First pipeline segment that touches a guarded path with anything other than
-# an existence check or dosi itself. A function, not a case inside $(...):
-# macOS /bin/sh (bash 3.2) cannot parse case patterns in command substitution.
+# The first command in $1 that READS a guarded file: a reader (cat, grep,
+# sed, cp, curl, an interpreter, ...) with the file as an input argument, or
+# any command fed it with `<`. Writing it (`> f`, `>> f`), existence checks
+# (test, ls, for ... do test -f), dosi itself and a grep whose PATTERN merely
+# names the file are all fine. One awk program: macOS /bin/sh (bash 3.2)
+# cannot parse case patterns inside $(...), and awk tokenizes far better.
 first_bad_segment() {
-  printf '%s\n' "$1" | sed 's/&&/;/g; s/||/;/g' | tr ';|' '\n\n' | while IFS= read -r seg; do
-    printf '%s\n' "$seg" | grep -Eq "$guarded" || continue
-    first=$(printf '%s\n' "$seg" | awk '{print $1}')
-    if allowed_cmd "$first"; then continue; fi
-    printf '%s\n' "$seg" | sed 's/^[[:space:]]*//'
-    break
-  done
-}
-
-allowed_cmd() {
-  case "$1" in
-    dosi|*/dosi|ls|test|"["|stat) return 0 ;;
-    *) return 1 ;;
-  esac
+  printf '%s\n' "$1" | awk -v re="$guarded" '
+    function strip(t) { gsub(/^["\047]+|["\047;)]+$/, "", t); return t }
+    {
+      line = $0
+      gsub(/&&|\|\||;|\||\(|\)|`|\$\(/, "\n", line)
+      n = split(line, segs, "\n")
+      for (i = 1; i <= n; i++) {
+        m = split(segs[i], w, /[ \t]+/)
+        k = 1
+        while (k <= m && (w[k] == "" || w[k] ~ /^(do|then|else|!|time|sudo|command|exec|xargs)$/ || w[k] ~ /^[A-Za-z_][A-Za-z0-9_]*=/)) k++
+        if (k > m) continue
+        cmd = w[k]; sub(/.*\//, "", cmd)
+        reader = cmd ~ /^(cat|tac|less|more|head|tail|bat|nl|grep|egrep|fgrep|rg|ag|ack|sed|awk|gawk|cut|sort|uniq|wc|strings|xxd|od|hexdump|base64|md5sum|sha256sum|cp|mv|scp|rsync|curl|wget|source|\.|python|python3|node|perl|ruby|php|jq|yq|diff|cmp|vi|vim|nano|emacs|code|open|tee|dd|iconv|column|paste|join|tr|zip|tar|gzip)$/
+        pattern_first = cmd ~ /^(grep|egrep|fgrep|rg|ag|ack|sed|awk|gawk)$/
+        seen_pattern = 0
+        for (j = k + 1; j <= m; j++) {
+          t = w[j]
+          if (t == "<" || t ~ /^</) {             # input redirection
+            f = (t == "<") ? w[j + 1] : substr(t, 2)
+            if (strip(f) ~ re) { print segs[i]; exit }
+            if (t == "<") j++
+            continue
+          }
+          if (t ~ /^[0-9]*>>?$/) { j++; continue }  # `> file`: a write
+          if (t ~ /^[0-9]*>/) continue              # `>file` / `2>/dev/null`
+          if (t ~ /^-/) continue                    # an option
+          if (pattern_first && !seen_pattern) { seen_pattern = 1; continue }
+          if (reader && strip(t) ~ re) { print segs[i]; exit }
+        }
+      }
+    }'
 }
 
 case "$tool" in

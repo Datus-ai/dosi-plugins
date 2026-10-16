@@ -46,6 +46,9 @@ if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
   {
     printf "export DOSI_PLUGIN_DATA='%s'\n" "$data"
     printf "export DOSI_BIN='%s'\n" "$bindir/dosi"
+    # The shim first: another dosi on the user's PATH (e.g. ~/.local/bin)
+    # must not shadow the version this plugin pins.
+    printf "export PATH='%s':\"\$PATH\"\n" "$DOSI_LIB_ROOT/bin"
     [ -n "$model" ] && printf "export DOSI_MODEL='%s'\n" "$model"
     [ -n "$onto" ] && printf "export DOSI_ONTOLOGY='%s'\n" "$onto"
   } >> "$CLAUDE_ENV_FILE"
@@ -66,6 +69,15 @@ if [ -n "$model" ] && [ -f "$bindir/.ok" ]; then
   "$progress" record relationships "$(grep -c 'from_columns' "$model" 2>/dev/null || echo 0)"
 fi
 stage=$("$progress" stage)
+
+# What this dosi can do. Plugin version == dosi version, so before the binary
+# lands the answer is the same as after; ask the binary when it is there.
+caps=""
+if [ -f "$bindir/.ok" ]; then
+  "$bindir/dosi" --help 2>/dev/null | grep -q '^  migrate' || caps="no-migrate"
+else
+  case "$(dosi_plugin_version)" in 0.1.13|0.1.12|0.1.11) caps="no-migrate" ;; esac
+fi
 
 # 5. At most five lines of context, one next step.
 if [ -n "$model" ]; then
@@ -88,6 +100,8 @@ fi
 ctx="[dosi] 阶段 $stage · $where${found:+ · 发现：$found}
 [dosi] 下一步：$next
 [dosi] 规则：数据问题用 dosi 的指标或 select 回答，不要手写 SQL 查模型已覆盖的表；展示生成的 SQL；不要打开 profiles.yml、.env、dosi-connections.yaml；错误按「发生了什么 / 原因 / 下一步」转述。"
+[ "$caps" = no-migrate ] && ctx="$ctx
+[dosi] 这个 dosi 版本没有 migrate / connection 命令：不要调用它们。本地文件直接写 dosi-connections.yaml；数仓按 dosi-connect 的手动路径（${VAR} 模板）。"
 case "$stage" in
   S0|S1|S2|S3) ctx="$ctx
 [dosi] 当前阶段不要主动提 ontology，除非用户自己问到。" ;;

@@ -45,7 +45,7 @@ dosi lineage view
 
 Writes the HTML page and opens it in the default browser; it prints the path.
 In a remote or headless session (SSH, container, no display) use
-`dosi lineage view --no-open --out dosi/lineage.html` and give the user the
+`dosi lineage view --no-open --out "${TMPDIR:-/tmp}/dosi-lineage.html"` and give the user the
 path to open. When an ontology exists (`DOSI_ONTOLOGY` is set), the same page
 carries the concept layer — that *is* the ontology graph.
 

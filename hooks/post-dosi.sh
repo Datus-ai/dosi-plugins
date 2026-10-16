@@ -18,6 +18,11 @@ case "$cmd" in
   *"connection test"*) has '\\"ok\\":true\|"ok":true' && "$p" record connected ;;
   *"migrate conf"*) has 'status\\*"*:\\*"ok' && ! printf '%s' "$cmd" | grep -q -- '--detect' && "$p" record connected ;;
 esac
+# A subagent's trial queries (dosi-modeler checking its model) are not the
+# user getting an answer: agent_id is present only inside a subagent.
+in_subagent=0
+has '"agent_id":"[^"]' && in_subagent=1
+[ $in_subagent -eq 1 ] && exit 0
 case "$cmd" in
   *" select "*"--execute"*|*" select "*"--execute") "$p" record select; "$p" record answered ;;
   *" query "*"--execute"*|*" query "*"--execute") has 'rows' && "$p" record answered ;;

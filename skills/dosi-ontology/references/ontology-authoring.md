@@ -96,6 +96,16 @@ ontology_mappings:
                 relationship: departure_delay
 ```
 
+## Link direction (read before writing links)
+
+A link is declared on the concept that holds the foreign key and is walked
+many → one: `Order.placed_by.region`, never `Customer.places…`. dosi does
+not walk one → many (it would fan out), and there is no inverse-link syntax
+to look for — do not search the examples or the binary for one. To answer
+"per customer" questions, group a metric that lives on `Order` by
+`Order.placed_by.<property>`. A second verbalization such as
+`'{Customer} places {Order}'` is documentation only.
+
 ## Building one from a model
 
 1. **Entities** — one `EntityType` concept per business thing the user talks

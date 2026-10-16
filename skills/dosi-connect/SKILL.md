@@ -27,16 +27,16 @@ goal — when it works, go straight back to what the user originally asked.
 
 ## Step 1 — What is there?
 
+The `[dosi]` SessionStart context already says what exists here (`发现：…`).
+Use it; do not re-check. Only when that line is missing, run ONE command:
+
 ```bash
-dosi migrate conf --detect --format json
+ls -1d dbt_project.yml profiles.yml .env dosi-connections.yaml *.duckdb *.parquet *.csv *.sqlite 2>/dev/null; test -f ~/.dbt/profiles.yml && echo '~/.dbt/profiles.yml'
 ```
 
-Returns `{"sources":[{"kind","path"}], "connections":[...]}` and writes
-nothing. `kind` is `dbt`, `cube`, `dosi`, `datus` or `local`.
-
-If the command is unknown (older dosi), fall back to existence checks only:
-`test -f dbt_project.yml`, `test -f ~/.dbt/profiles.yml`, `test -f .env`,
-`test -f dosi-connections.yaml`, `ls *.duckdb *.sqlite 2>/dev/null`.
+If the context says this dosi has no `migrate` / `connection` commands, never
+call them — take path B or C below. Otherwise `dosi migrate conf --detect
+--format json` lists sources and would-be connections without writing.
 
 ## Step 2 — Pick the path
 
@@ -59,16 +59,20 @@ each connection as `{"name","dialect","source","status","missing_env","code","re
   suggest key-pair auth or password + env var). Offer the other connections.
 
 **B. Only local files** (`.duckdb`, `.sqlite`) and no warehouse config →
-no question. If `dosi-connections.yaml` does not exist, create it with one
-local entry and make it the default:
+no question, no test, no inspection. Write `dosi-connections.yaml` with the
+Write tool (it holds no secret, so it does not need `.gitignore`):
 
 ```yaml
 datasources:
   local:
     type: duckdb
-    uri: duckdb:///<absolute path to file.duckdb>
+    uri: duckdb:///<absolute path to file.duckdb>   # absolute path starts with /, giving duckdb:////…
     default: true
 ```
+
+Do not open the database with the duckdb CLI or Python to look at it —
+reading the schema is the dosi-modeler subagent's job. Reply one line
+`✓ 已连接 local（duckdb，<file>）` and go to Step 4.
 
 **C. Nothing found** → **Q2** "数据在哪里？": 当前目录的文件 / Snowflake /
 BigQuery / Databricks / 其他（Postgres、ClickHouse、Trino、StarRocks…）.
@@ -78,7 +82,7 @@ every secret as `${VAR}`, non-secret identifiers (host, database, warehouse)
 asked from the user only if they are not secret. Then list the variables the
 user must export.
 
-## Step 3 — Test
+## Step 3 — Test (warehouses only, and only when `dosi connection` exists)
 
 ```bash
 dosi connection test <name> --format json
@@ -102,6 +106,9 @@ Failure: the error JSON has `code`, `message`, `hint`. Translate it with
   action; do not retry blindly.
 
 ## Step 4 — Back to the question
+
+If the user only asked to connect (no data question pending), end with one
+line naming the next step: 下一步：说「给这些数据建个语义模型」，或者直接问一个数据问题。
 
 Do not stop at "connected". If there is no `dosi/model.yaml`, continue with
 the **dosi-model** skill to build a minimal model for the user's question;

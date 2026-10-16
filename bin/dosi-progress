@@ -77,7 +77,24 @@ shown() { [ -n "${PEEK:-}" ] && return 0; set_ "shown_$1" 1; grep -v "^after_$1=
 
 in_git_repo() { git -C "$proj" rev-parse --is-inside-work-tree >/dev/null 2>&1; }
 
+# Facts the filesystem already knows, so a model or ontology written in the
+# middle of a session counts without waiting for the next SessionStart.
+sync_files() {
+  [ -f "$proj/dosi/model.yaml" ] && [ "$(num model)" -lt 1 ] && set_ model 1
+  [ -f "$proj/dosi/ontology.yaml" ] && [ "$(num ontology)" -lt 1 ] && set_ ontology 1
+  return 0
+}
+
+# S6: the model file unchanged for a day and in use since (resumed and
+# compacted sessions are not new days, so counting sessions over-counts).
+model_settled() {
+  since=$(num model_since)
+  [ "$since" -gt 0 ] || return 1
+  [ $(( $(date +%s) - since )) -ge 86400 ] && [ "$(num answered)" -ge 3 ]
+}
+
 next() {
+  sync_files
   if [ "$(num ontology)" -ge 1 ] && may_show h_ontology_ready; then
     shown h_ontology_ready
     echo "HINT: 现在可以直接按业务概念提问了，比如「客户常去哪些门店」；想看概念关系图也可以说一声。"
@@ -94,7 +111,7 @@ next() {
     echo "HINT: 这个数是按模型里定义的指标算的，想看它是怎么算出来的可以问我。"
     return
   fi
-  if [ "$(num model)" -ge 1 ] && [ "$(num stable_sessions)" -ge 3 ] && in_git_repo && may_show h_team; then
+  if [ "$(num model)" -ge 1 ] && model_settled && in_git_repo && may_show h_team; then
     shown h_team
     echo "ASK: 模型已经稳定了一阵，要把 dosi/ 提交给团队共享吗？ | 提交 | 以后再说 | 不再提示"
     echo "(answer with: dosi-progress answer h_team yes|later|never)"
@@ -105,7 +122,7 @@ next() {
 cmd=${1:-status}
 [ $# -gt 0 ] && shift
 case "$cmd" in
-  stage) stage ;;
+  stage) sync_files; stage ;;
   next) next ;;
   peek) PEEK=1 next ;;
   answer)
@@ -125,16 +142,16 @@ case "$cmd" in
       entity_question) incr entity_questions ;;
       datasets|relationships) set_ "$ev" "${2:-0}" ;;
       session)
-        # Model stability for S6: count sessions that start with an
-        # unchanged model file.
+        # Model stability for S6: remember when the model file last changed.
         m="$proj/dosi/model.yaml"
         if [ -f "$m" ]; then
           sig=$(cksum < "$m" | awk '{print $1}')
-          if [ "$sig" = "$(get model_sig)" ]; then incr stable_sessions
-          else set_ model_sig "$sig"; set_ stable_sessions 0; fi
+          if [ "$sig" != "$(get model_sig)" ]; then
+            set_ model_sig "$sig"; set_ model_since "$(date +%s)"
+          fi
         fi ;;
       *) echo "dosi-progress: unknown event $ev" >&2; exit 2 ;;
     esac ;;
-  status) echo "stage=$(stage)"; cat "$file" ;;
+  status) sync_files; echo "stage=$(stage)"; cat "$file" ;;
   *) echo "usage: dosi-progress stage|next|answer|record|dismiss|status" >&2; exit 2 ;;
 esac

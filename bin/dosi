@@ -12,6 +12,16 @@ DOSI_LIB_ROOT=$(dirname -- "$self_dir")
 
 want=$(dosi_plugin_version)
 
+# The project's model and ontology without --model: a model written earlier
+# in this session is not in the env file SessionStart wrote.
+proj=${CLAUDE_PROJECT_DIR:-$PWD}
+if [ -z "${DOSI_MODEL:-}" ] && [ -f "$proj/dosi/model.yaml" ]; then
+  DOSI_MODEL="$proj/dosi/model.yaml"; export DOSI_MODEL
+fi
+if [ -z "${DOSI_ONTOLOGY:-}" ] && [ -f "$proj/dosi/ontology.yaml" ]; then
+  DOSI_ONTOLOGY="$proj/dosi/ontology.yaml"; export DOSI_ONTOLOGY
+fi
+
 if [ -n "${DOSI_BIN:-}" ] && [ -x "$DOSI_BIN" ]; then
   exec "$DOSI_BIN" "$@"
 fi
