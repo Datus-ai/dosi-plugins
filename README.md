@@ -1,5 +1,7 @@
 # Dosi plugins for coding agents
 
+**English** | [简体中文](README.zh-CN.md)
+
 Ask data questions in Claude Code (and other coding agents) and get answers
 computed from governed metrics. [Dosi](https://dosi.datus.ai) is a local
 semantic layer built on Apache Ossie (formerly OSI). From inside the agent it can:
@@ -61,34 +63,36 @@ to try next.
 
 ### 1. Connect, about 10 s
 
-> 帮我连上数据 / Connect to my data
+> Connect to my data
 
 The plugin finds `orders-200k.duckdb` and connects with no questions.
-Expected: `✓ 已连接 local（duckdb，orders-200k.duckdb）`.
+Expected: a one-line confirmation that the `local` connection
+(duckdb, `orders-200k.duckdb`) is up.
 
 With your own data, this is where it detects your dbt project or Cube
 `.env` and asks which connection to use (see [Your own data](#your-own-data)).
 
 ### 2. Build a semantic model, about 1 min
 
-> 给这些数据建一个语义模型 / Build a semantic model for this data
+> Build a semantic model for this data
 
 A subagent reads the schema, writes `dosi/model.yaml` (Apache Ossie) and
 validates it. Expected: 3 datasets, 2 relationships and about 9 metrics.
 You then get **at most three questions** about business meaning, for
 example "should revenue include cancelled orders?". Each comes with a
-recommended answer; pick one or say "按推荐的来" (use the recommendations).
+recommended answer; pick one or say "use the recommendations".
 
 ### 3. Ask with metrics, about 15 s
 
-> 各地区每个月的销售额是多少？ / Revenue by region and month?
+> What is revenue by region and month?
 
 Expected: a table, a one-line footer with the source and row count, and the
-SQL dosi compiled. Ask follow-ups freely: "只看 north", "按周看", "环比呢".
+SQL dosi compiled. Ask follow-ups freely: "only north", "by week",
+"month over month?".
 
 ### 4. See how a number is computed, about 15 s
 
-> 销售额是怎么算出来的？ / How is revenue calculated?
+> How is revenue calculated?
 
 Expected: a lineage tree in the chat (table → dataset → metric), plus a
 full interactive lineage page written locally. It opens in your browser
@@ -96,29 +100,27 @@ when one is available; otherwise you get the file path.
 
 ### 5. Ask for records, about 20 s
 
-> 列出金额最大的 10 个订单，带上客户地区和商品类目
-> / List the 10 largest orders with customer region and product category
+> List the 10 largest orders with customer region and product category
 
 Expected: row-level results through `dosi select`, with joins chosen for
 you. Then try another entity question:
 
-> 哪些客户下单次数最多？ / Which customers order the most?
+> Which customers order the most?
 
 ### 6. Build an ontology when it is offered, about 1.5 min
 
 After a couple of entity questions, the plugin offers an ontology **once**:
+your questions involve several business entities, and asking by business
+concept would be more accurate.
 
-> 你的问题涉及多个业务实体。建一个 ontology，按业务概念来问会更准，要了解一下吗？
-
-Answer `了解一下` (tell me more). A subagent drafts `dosi/ontology.yaml`
+Answer "tell me more". A subagent drafts `dosi/ontology.yaml`
 with the concepts Customer, Order and Product and their links, validates it,
 and asks only if something is genuinely ambiguous. If you answer
-"以后再说" (later), it asks again only after 10 more questions.
+"later", it asks again only after 10 more questions.
 
 ### 7. Ask by business concept, about 20 s
 
-> 每个商品类目下，哪个地区的客户买得最多？
-> / In each product category, which region's customers buy the most?
+> In each product category, which region's customers buy the most?
 
 Expected: the answer is computed through concept paths such as
 `Order.placed_by.region` and `Order.purchases.category`, which you can
