@@ -10,9 +10,11 @@ dosi_root() {
 }
 
 # The plugin version — also the dosi version it pins (RFC Q3: one-to-one).
+# The dosi release this plugin pins (RFC Q3). Kept in DOSI_VERSION, not in
+# plugin.json: without a manifest version Claude Code versions the plugin by
+# git commit, so plugin-only fixes reach users without a dosi release.
 dosi_plugin_version() {
-  sed -n 's/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
-    "$(dosi_root)/.claude-plugin/plugin.json" | head -n 1
+  tr -d ' \n' < "$(dosi_root)/DOSI_VERSION"
 }
 
 # Persistent per-plugin data dir. Hooks get CLAUDE_PLUGIN_DATA; Bash tool

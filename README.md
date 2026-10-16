@@ -153,7 +153,7 @@ auth or a password variable instead.
 | `skills/dosi-ontology` | Builds `dosi/ontology.yaml` and answers questions by business concept |
 | `agents/dosi-modeler`, `agents/dosi-ontologist` | Subagents that read schemas, so your main conversation stays clean |
 | `hooks/` | Installs the pinned binary, validates every model edit, blocks reads of connection configs, and decides which feature to suggest next |
-| `bin/dosi` | Runs the dosi version this plugin pins. The plugin version always equals the dosi version |
+| `bin/dosi` | Runs the dosi release pinned in `DOSI_VERSION`. Plugin fixes ship on every commit; the dosi binary changes only when that file does |
 
 ### Files it creates in your project
 
