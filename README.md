@@ -18,6 +18,16 @@ Claude Code — type at the prompt:
 /plugin install dosi --marketplace Datus-ai/dosi-plugins
 ```
 
+If that says the plugin is not found (Claude Code older than 2.1.275), add the
+marketplace first:
+
+```
+/plugin marketplace add Datus-ai/dosi-plugins
+/plugin install dosi@dosi-plugins
+```
+
+Or from a shell: `claude plugin install dosi --marketplace Datus-ai/dosi-plugins`.
+
 Any coding agent — say:
 
 > Install Dosi by following https://raw.githubusercontent.com/Datus-ai/dosi-plugins/main/agent-install.md
