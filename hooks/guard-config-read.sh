@@ -12,8 +12,32 @@ tool=$(printf '%s' "$payload" | json_get tool_name)
 guarded='(profiles\.yml|dosi-connections\.ya?ml|\.snowsql/|\.databrickscfg|\.datus/conf/agent\.yml|conf/agent\.yml|(^|[/[:space:]"'"'"'=])\.env(\.[A-Za-z0-9_-]+)?($|[[:space:]"'"'"';|&)]))'
 
 deny() {
-  echo "已拦截：`$1` 会打开数仓连接配置（可能含密钥），不要这样做。连接由 dosi 处理：用 \`dosi migrate conf --detect --format json\` 看有哪些来源，用 \`dosi migrate conf --from dbt|cube --format json\` 生成 dosi 连接（输出不含任何值）。只需要知道文件在不在时，用 test -f。" >&2
+  # printf with %s only: the blocked command must never be expanded or run.
+  printf '%s\n' "已拦截：这条操作会打开数仓连接配置（可能含密钥），不要这样做：" "  $1" \
+    "连接由 dosi 处理：dosi migrate conf --detect --format json 查看有哪些来源；" \
+    "dosi migrate conf --from dbt|cube --format json 生成 dosi 连接（输出不含任何值）。" \
+    "只需要知道文件在不在时，用 test -f <path>。" >&2
   exit 2
+}
+
+# First pipeline segment that touches a guarded path with anything other than
+# an existence check or dosi itself. A function, not a case inside $(...):
+# macOS /bin/sh (bash 3.2) cannot parse case patterns in command substitution.
+first_bad_segment() {
+  printf '%s\n' "$1" | sed 's/&&/;/g; s/||/;/g' | tr ';|' '\n\n' | while IFS= read -r seg; do
+    printf '%s\n' "$seg" | grep -Eq "$guarded" || continue
+    first=$(printf '%s\n' "$seg" | awk '{print $1}')
+    if allowed_cmd "$first"; then continue; fi
+    printf '%s\n' "$seg" | sed 's/^[[:space:]]*//'
+    break
+  done
+}
+
+allowed_cmd() {
+  case "$1" in
+    dosi|*/dosi|ls|test|"["|stat) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
 case "$tool" in
@@ -28,14 +52,7 @@ case "$tool" in
     printf '%s\n' "$cmd" | grep -Eq "$guarded" || exit 0
     # Judge each pipeline segment on its own: `dosi migrate conf ...` and
     # `test -f ~/.dbt/profiles.yml` are fine, `cat`/`grep`/`head` are not.
-    bad=$(printf '%s\n' "$cmd" | sed 's/&&/;/g; s/||/;/g' | tr ';|' '\n\n' | while IFS= read -r seg; do
-      printf '%s\n' "$seg" | grep -Eq "$guarded" || continue
-      first=$(printf '%s\n' "$seg" | awk '{print $1}')
-      case "$first" in
-        dosi|*/dosi|ls|test|"["|stat) : ;;
-        *) printf '%s\n' "$seg" | sed 's/^[[:space:]]*//'; break ;;
-      esac
-    done)
+    bad=$(first_bad_segment "$cmd")
     [ -n "$bad" ] && deny "$bad" ;;
 esac
 exit 0
