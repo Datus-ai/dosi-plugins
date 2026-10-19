@@ -43,6 +43,11 @@ full interactive graph as a **local HTML page** (self-contained, opens over
 dosi lineage view
 ```
 
+In Claude Code, first point the user to `/dosi lineage <metric>`: it opens
+the same graph in a pane inside Claude Code (a tree in the terminal, the full
+graph in Desktop), with no browser needed. Write the HTML page when the user
+asks for a page or a file, or in any other agent:
+
 Writes the HTML page and opens it in the default browser; it prints the path.
 In a remote or headless session (SSH, container, no display) use
 `dosi lineage view --no-open --out "${TMPDIR:-/tmp}/dosi-lineage.html"` and give the user the

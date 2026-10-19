@@ -1,7 +1,7 @@
 {
   "description": "dosi: zero-setup binary, project detection, config-read guard, validate-on-edit, progress tracking",
   "modules": [
-    "./register.ts"
+    "./register.tsx"
   ],
   "hooks": {
     "SessionStart": [

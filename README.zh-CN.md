@@ -114,6 +114,23 @@ claude
 预期结果：答案通过 `Order.placed_by.region`、`Order.purchases.category` 这样的概念路径计算得出，
 这些路径在之后的问题中可以复用。
 
+## 在 Claude Code 中：状态、面板与结果表格
+
+在 Claude Code 中，插件还会绘制自己的界面。这些都不会改变 Claude 读到的内容；
+没有它们，上面的每一步也照常可用。
+
+- **状态栏**：项目的实时状态，例如 `dosi · duckdb:local · 3 ds · 8 metrics · ontology 3`。
+  每次执行 dosi 命令、每次修改 `dosi/*.yaml` 后都会更新。
+- **`/dosi`**：当前连接、模型文件及其是否通过校验、数据集 / 指标 / 维度的数量、ontology，
+  以及下一步。`/dosi metrics` 列出所有指标及其说明。
+- **`/dosi lineage [指标]`**：打开血缘面板。在终端里以树的形式展示一个指标由什么算出，
+  或一张表被哪些指标依赖；在 Claude Code Desktop 中还会绘制完整的血缘图，并高亮所选路径。
+  按 `h` 可同时生成 HTML 页面。
+- **输入框上方的提示条**，只在有事可做时出现：模型校验有问题、ontology 建议待回答（带按钮直接回答），
+  或目录里有数据但还没有连接。
+- **结果展示**：`dosi … --format json` 的结果显示为表格，下方注明数据来源和行数，
+  SQL 点一下即可展开。命令出错时显示错误、原因和下一步建议。
+
 ## 使用你自己的数据
 
 在你的项目目录中启动 Claude Code，直接问数据问题即可。插件的行为与教程相同，只有第 1 步不同：
@@ -138,7 +155,7 @@ Claude 永远看不到你的密码。缺少变量时，由你自己用 `! export
 | `skills/dosi-view` | 在对话中和本地 HTML 页面里展示指标血缘与 ontology 图 |
 | `skills/dosi-ontology` | 构建 `dosi/ontology.yaml`，并按业务概念回答问题 |
 | `agents/dosi-modeler`、`agents/dosi-ontologist` | 负责读取 schema 的子智能体，让主对话保持简洁 |
-| `hooks/` | 安装固定版本的二进制、校验每次模型修改、阻止读取连接配置，并决定下一步建议哪个功能 |
+| `hooks/` | 安装固定版本的二进制、校验每次模型修改、阻止读取连接配置，并决定下一步建议哪个功能。`register.tsx` 是 Claude Code 界面：状态栏、`/dosi`、提示条、血缘面板和结果表格 |
 | `bin/dosi` | 运行 `DOSI_VERSION` 中固定的 dosi 版本。插件修复随每次提交发布；只有该文件变化时 dosi 二进制才会更新 |
 
 ### 在项目中生成的文件

@@ -126,6 +126,28 @@ Expected: the answer is computed through concept paths such as
 `Order.placed_by.region` and `Order.purchases.category`, which you can
 reuse in later questions.
 
+## In Claude Code: status, pane and result tables
+
+In Claude Code the plugin also draws its own interface. None of it changes
+what Claude reads, and every step above works the same without it.
+
+- **Status line**: the live state of the project, for example
+  `dosi · duckdb:local · 3 ds · 8 metrics · ontology 3`. It updates after
+  every dosi command and every edit to `dosi/*.yaml`.
+- **`/dosi`**: the connection, the model file and whether it validates,
+  counts of datasets, metrics and dimensions, the ontology, and the next
+  step. `/dosi metrics` lists every metric with its description.
+- **`/dosi lineage [metric]`**: opens a lineage pane. In the terminal it
+  draws a tree, either what a metric is computed from or what depends on a
+  table. In Claude Code Desktop it also draws the full graph with the
+  selected path highlighted. Press `h` to write the HTML page as well.
+- **A band above the prompt**, only when there is something to act on:
+  the model has validation issues, the ontology offer is pending (with
+  buttons to answer it), or there is data in the folder but no connection yet.
+- **Result rows**: a `dosi … --format json` result shows as a table, with
+  the source and row count underneath and the SQL one click away. A failed
+  command shows as the error, its cause and what to try next.
+
 ## Your own data
 
 Start Claude Code in your project folder and just ask a data question. The
@@ -154,7 +176,7 @@ auth or a password variable instead.
 | `skills/dosi-view` | Shows metric lineage and the ontology graph, in the chat and as a local HTML page |
 | `skills/dosi-ontology` | Builds `dosi/ontology.yaml` and answers questions by business concept |
 | `agents/dosi-modeler`, `agents/dosi-ontologist` | Subagents that read schemas, so your main conversation stays clean |
-| `hooks/` | Installs the pinned binary, validates every model edit, blocks reads of connection configs, and decides which feature to suggest next |
+| `hooks/` | Installs the pinned binary, validates every model edit, blocks reads of connection configs, and decides which feature to suggest next. `register.tsx` is the Claude Code interface: status line, `/dosi`, the band, the lineage pane and result tables |
 | `bin/dosi` | Runs the dosi release pinned in `DOSI_VERSION`. Plugin fixes ship on every commit; the dosi binary changes only when that file does |
 
 ### Files it creates in your project

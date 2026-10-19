@@ -14,5 +14,6 @@
     "ontology",
     "sql",
     "data"
-  ]
+  ],
+  "types": "./types/index.d.ts"
 }
