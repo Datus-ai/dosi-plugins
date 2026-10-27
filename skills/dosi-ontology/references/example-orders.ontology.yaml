@@ -1,50 +1,52 @@
 # A complete, validated example: orders / customers / products (model-first).
-# Pair: model-orders.yaml. Check: dosi --model model-orders.yaml --ontology example-orders.ontology.yaml validate
+# Three files: model-orders.yaml (the model), this ontology (concepts only),
+# example-orders.mapping.yaml (which column each concept and link is).
+# Check: dosi --mapping example-orders.mapping.yaml validate
 version: 0.2.0.dev0
 name: Sales
 description: >
-  订单、客户与商品。一笔订单（Order）由一位客户（Customer）下单，购买一件商品（Product）；
-  地区是客户的属性，类目是商品的属性。
+  Orders, customers and products. An Order is placed by one Customer and
+  purchases one Product; region belongs to the customer, category to the product.
 
 ontology:
 # ---------------------------------------------------------------- value types
 - concept: OrderId
-  description: 订单编号
+  description: Order id
   type: ValueType
   extends: [ String ]
 - concept: CustomerId
-  description: 客户编号
+  description: Customer id
   type: ValueType
   extends: [ String ]
 - concept: ProductId
-  description: 商品编号
+  description: Product id
   type: ValueType
   extends: [ String ]
 - concept: Region
-  description: 客户所属地区（north/east/south/west）
+  description: The customer's region (north/east/south/west)
   type: ValueType
   extends: [ String ]
 - concept: Category
-  description: 商品类目（home/electronics/books/toys）
+  description: Product category (home/electronics/books/toys)
   type: ValueType
   extends: [ String ]
 - concept: OrderStatus
-  description: 订单状态（completed 已完成 / cancelled 已取消）
+  description: Order status (completed / cancelled)
   type: ValueType
   extends: [ String ]
   requires: [ "OrderStatus == 'completed' OR OrderStatus == 'cancelled'" ]
 - concept: Amount
-  description: 订单金额
+  description: Order amount
   type: ValueType
   extends: [ Decimal ]
 - concept: UnitCost
-  description: 商品单位成本
+  description: Product unit cost
   type: ValueType
   extends: [ Decimal ]
 
 # --------------------------------------------------------------- entity types
 - concept: Customer
-  description: 客户
+  description: A customer
   type: EntityType
   identify_by: [ id ]
   relationships:
@@ -62,7 +64,7 @@ ontology:
     verbalizes: [ '{Customer} signed up on {Date}' ]
 
 - concept: Product
-  description: 商品
+  description: A product
   type: EntityType
   identify_by: [ id ]
   relationships:
@@ -80,7 +82,7 @@ ontology:
     verbalizes: [ '{Product} costs {UnitCost} per unit' ]
 
 - concept: Order
-  description: 订单，一行一笔
+  description: An order, one per row
   type: EntityType
   identify_by: [ id ]
   relationships:
@@ -108,75 +110,3 @@ ontology:
     roles: [ { concept: Amount } ]
     multiplicity: ManyToOne
     verbalizes: [ '{Order} is worth {Amount}' ]
-
-ontology_mappings:
-- name: sales_duckdb
-  semantic_model:
-    name: sales
-    datasets:
-    - name: orders
-      source: main.orders
-      fields:
-      - { name: order_id, expression: { dialects: [ { dialect: ANSI_SQL, expression: order_id } ] } }
-      - { name: customer_id, expression: { dialects: [ { dialect: ANSI_SQL, expression: customer_id } ] } }
-      - { name: product_id, expression: { dialects: [ { dialect: ANSI_SQL, expression: product_id } ] } }
-      - { name: order_date, expression: { dialects: [ { dialect: ANSI_SQL, expression: order_date } ] } }
-      - { name: status, expression: { dialects: [ { dialect: ANSI_SQL, expression: status } ] } }
-      - { name: amount, expression: { dialects: [ { dialect: ANSI_SQL, expression: amount } ] } }
-    - name: customers
-      source: main.customers
-      fields:
-      - { name: customer_id, expression: { dialects: [ { dialect: ANSI_SQL, expression: customer_id } ] } }
-      - { name: region, expression: { dialects: [ { dialect: ANSI_SQL, expression: region } ] } }
-      - { name: signup_date, expression: { dialects: [ { dialect: ANSI_SQL, expression: signup_date } ] } }
-    - name: products
-      source: main.products
-      fields:
-      - { name: product_id, expression: { dialects: [ { dialect: ANSI_SQL, expression: product_id } ] } }
-      - { name: category, expression: { dialects: [ { dialect: ANSI_SQL, expression: category } ] } }
-      - { name: unit_cost, expression: { dialects: [ { dialect: ANSI_SQL, expression: unit_cost } ] } }
-  concept_mappings:
-  - concept: Customer
-    object_mappings:
-    - referent_mappings:
-      - { relationship: id, expression: customers.customer_id }
-    link_mappings:
-    - object_mapping:
-        referent_mappings:
-        - { relationship: id, expression: customers.customer_id }
-      children:
-      - { object_mapping: { concept: Region, expression: customers.region }, relationship: region }
-      - { object_mapping: { concept: Date, expression: customers.signup_date }, relationship: signup_date }
-  - concept: Product
-    object_mappings:
-    - referent_mappings:
-      - { relationship: id, expression: products.product_id }
-    link_mappings:
-    - object_mapping:
-        referent_mappings:
-        - { relationship: id, expression: products.product_id }
-      children:
-      - { object_mapping: { concept: Category, expression: products.category }, relationship: category }
-      - { object_mapping: { concept: UnitCost, expression: products.unit_cost }, relationship: unit_cost }
-  - concept: Order
-    object_mappings:
-    - referent_mappings:
-      - { relationship: id, expression: orders.order_id }
-    link_mappings:
-    - object_mapping:
-        referent_mappings:
-        - { relationship: id, expression: orders.order_id }
-      children:
-      - object_mapping:
-          concept: Customer
-          referent_mappings:
-          - { relationship: id, expression: orders.customer_id }
-        relationship: placed_by
-      - object_mapping:
-          concept: Product
-          referent_mappings:
-          - { relationship: id, expression: orders.product_id }
-        relationship: purchases
-      - { object_mapping: { concept: Date, expression: orders.order_date }, relationship: order_date }
-      - { object_mapping: { concept: OrderStatus, expression: orders.status }, relationship: status }
-      - { object_mapping: { concept: Amount, expression: orders.amount }, relationship: amount }

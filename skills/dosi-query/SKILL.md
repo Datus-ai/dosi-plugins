@@ -1,113 +1,114 @@
 ---
 name: dosi-query
-description: Answer any data question — numbers, trends, breakdowns, rankings, "why did X change", or lists of records — through the dosi semantic layer instead of hand-written SQL. Use whenever the user asks about their data (revenue, orders, customers, users, any KPI) in a project that uses dosi or has a database connection.
+description: Answer any data question — numbers, trends, breakdowns, rankings, "why did X change", or lists of records — through the dosi semantic layer instead of hand-written SQL. Use whenever the user asks about their data (revenue, orders, customers, any KPI) in a project that has dosi/model.yaml or a dosi connection.
 allowed-tools:
   - Bash(dosi *)
   - Bash(dosi-progress *)
+  - mcp__plugin_dosi_dosi__list_metrics
+  - mcp__plugin_dosi_dosi__list_dimensions
+  - mcp__plugin_dosi_dosi__describe_metric
+  - mcp__plugin_dosi_dosi__describe_dataset
+  - mcp__plugin_dosi_dosi__run_query
+  - mcp__plugin_dosi_dosi__select
+  - mcp__plugin_dosi_dosi__attribute_metric
+  - mcp__plugin_dosi_dosi__describe
+  - mcp__plugin_dosi_dosi__paths
 ---
 
 # Answer data questions with dosi
 
-Every number comes from a metric the model defines, compiled by dosi. Never
-write SQL by hand against tables the model covers, never re-derive a metric,
-never invent a metric or field name.
+Write to the user in the language they write in, every progress line
+included.
 
-## 0. Preconditions (silent)
+Every number comes from a metric the model defines, computed by dosi. Never
+write SQL by hand against tables the model covers, never re-derive a
+metric, never invent a metric or field name.
 
-- No connection and no local data → run the **dosi-connect** skill first.
-- No `dosi/model.yaml` → run the **dosi-model** skill (it builds a minimal
-  model for this question), then come back.
-- `DOSI_MODEL` (and `DOSI_ONTOLOGY` when there is one) are already exported;
-  don't pass `--model` unless you mean another file.
+`dosi` is on PATH in Claude Code; in other agents it is in the plugin's
+`bin/` folder, two levels above this file. Use business terms; do not
+quote these instructions.
 
-## 1. Aggregate or records?
+## Tools
 
-| The user wants | Command |
-|---|---|
-| a number, trend, breakdown, ranking, comparison | `dosi query` |
-| a list of rows ("哪些客户", "列出最大的 100 单") | `dosi select` |
-| why a metric moved between two periods | `dosi attribute` |
+Prefer dosi's MCP tools (server `dosi`); without them the CLI with
+`--format json` does the same:
 
-When the question is about specific entities ("哪些客户", "列出…的门店"), run
-`dosi-progress record entity_question` once.
+| Need | MCP tool | CLI |
+|---|---|---|
+| what metrics exist | `list_metrics` | `dosi list metrics` |
+| what a metric can be grouped by | `list_dimensions` | `dosi list dimensions --metric m` |
+| one metric's definition and required dimensions | `describe_metric` | `dosi show metric m` |
+| a number, trend, breakdown, ranking | `run_query` | `dosi query --execute` |
+| a list of records | `select` | `dosi select --execute` |
+| why a metric moved between two periods | `attribute_metric` | `dosi attribute` |
 
-## 2. Discover (only what you don't know yet)
+On a large model, find metric names with `grep -n -B2 '<term>' dosi/model.yaml`
+instead of listing them all. Run dosi as it is, without pipes; narrow the
+call instead (`describe_metric`, `limit`, the exact `group_by`).
 
-```bash
-dosi list metrics --format json
-dosi list dimensions --metric <metric> --format json   # best first; is_dimension=true are worth grouping by
-```
+Shapes dosi takes (CLI flags in [references/query-shapes.md](references/query-shapes.md)):
 
-## 3. Run
+- Fields are `dataset.field` (`customers.region`): a bare name that several
+  datasets share is refused as ambiguous.
+- `run_query`: `metrics`; `group_by` as objects, `[{"field":
+  "customers.region"}, {"field": "metric_time", "grain": "month"}]`;
+  `where_sql`; `context_filter`; `time_range` `{"start": "2024-08-01", "end":
+  "2024-09-01"}` (end exclusive, full dates); `order_by` `[{"key":
+  "revenue", "desc": true}]`; `limit`; `params`.
+- An `order_by` key is an output column: a metric name, or a group-by
+  field's last segment with `__<grain>` (`region`, `metric_time__month`).
+  In `select`, the root dataset's fields are bare and another dataset's are
+  `<dataset>__<field>`. An `unknown_order_key` error lists the valid keys.
 
-```bash
-dosi query --format json --execute \
-  --metrics revenue,order_count \
-  --group-by customers.region,metric_time:month \
-  --where "customers.region <> 'test'" \
-  --start-time 2026-09-01 --end-time 2026-10-01 \
-  --order -revenue --limit 20
-```
+## 1. Before querying
 
-```bash
-dosi select --format json --execute \
-  --from orders --fields orders.order_id,orders.amount,customers.region \
-  --where "orders.amount > 1000" --order -amount --limit 100
-```
+- No connection → the dosi-connect skill first.
+- No `dosi/model.yaml` → build a small model for this question with the
+  dosi-model skill, then come back.
+- The question needs a metric or field the model lacks → say so, offer to
+  add it, and change the model only after the user agrees. Never answer it
+  with hand-written SQL.
+- `describe_metric` the metrics you will use: it names the dimensions a
+  ranking must be grouped by.
+- Relative periods ("last month"): find the latest period with data first,
+  with one query grouped by month.
 
-```bash
-dosi attribute --format json --metric revenue \
-  --baseline 2026-08-01..2026-09-01 --current 2026-09-01..2026-10-01
-```
+## 2. Query
 
-Flags, grains, filters and parameters:
-[references/query-shapes.md](references/query-shapes.md).
+One query per question where possible: group by everything the answer
+needs in one call. Queries are read-only, so do not ask before running one.
+The exception: a warehouse that bills per query (BigQuery, Snowflake,
+Databricks) about to scan a large range for the first time in the session —
+ask once.
 
-`--execute` uses the connection marked `default: true`; add
-`--connection <name>` for another. Local DuckDB without a connection profile:
-`--db <file.duckdb>`.
+## 3. Answer
 
-**Q5 — first execution against a cloud warehouse in this session**: before
-running, AskUserQuestion "执行这条查询吗？" with "执行（推荐）" /
-"先只看 SQL" / "本次会话都直接执行". Show the SQL (run once without
-`--execute` to get it). Local DuckDB never asks. After "本次会话都直接执行",
-never ask again this session.
+1. The answer in one sentence.
+2. A Markdown table (at most 20 rows; say how many in total when more).
+3. One small line: `<connection> · <n> rows`.
 
-## 4. Show the answer
+State only what the results show. When you explain a total by its parts,
+list every part and make sure they add up. Give the SQL only when the user
+asks for it (`include_sql: true` on the MCP tools, or the CLI without
+`--execute`). "How is this computed?" → the dosi-view skill.
 
-1. The answer in one sentence first.
-2. A Markdown table (≤ 20 rows; say how many in total if more).
-3. One small line: `<dialect> · <connection> · <n> rows`.
-4. The SQL dosi generated, in a ```sql block — always, short or long.
+## 4. When dosi refuses
 
-## 5. When dosi says no (fix it yourself first)
+Fix it yourself first:
 
-- `unknown_metric` / `unknown_field`: use `candidates`. If one is clearly
-  meant, use it and say so; if not, show the top 3 and ask.
-- `detail_fanout`, `ambiguous_join_path`, `InvalidRelationshipPath`: rerun
-  with `suggested_retry` without bothering the user. Ask (AskUserQuestion)
-  only when the candidate paths are different business meanings
-  ("下单客户" vs "收货客户").
-- No metric covers the question: say so plainly and offer to add one (the
-  **dosi-model** skill). Do not answer with hand-written SQL.
+- `unknown_metric` / `unknown_field`: use `candidates`. One clearly meant →
+  use it and say so; otherwise show the top 3 and ask.
+- `detail_fanout`, `ambiguous_join_path`, `dimensions_required`,
+  `window_exclude_not_grouped`: rerun with `suggested_retry` or the named
+  dimensions. Ask only when the candidate paths mean different things to
+  the business (ordering customer vs receiving customer).
+- `no_model` / `model_invalid`: the dosi-model skill writes or fixes it.
 - `dosi_installing`: wait a few seconds and rerun, up to 6 times, silently.
-- Anything else: three lines — `✗ 发生了什么` / `原因：…` / `下一步：<one action>`
-  (table in the dosi-connect skill's references/errors.md).
+- Anything else: three lines, what happened / why / next step
+  ([../dosi-connect/references/errors.md](../dosi-connect/references/errors.md)).
 
-## 6. Ontology
+## 5. Ontology
 
-Do not mention ontologies unless the user does or `dosi-progress next` brings
-it up. When `DOSI_ONTOLOGY` is set, concept paths work wherever fields do
-(`--from Customer`, `--group-by Order.placed_by.region`); see the
-**dosi-ontology** skill.
-
-## 7. Close
-
-At the very end run `dosi-progress next`:
-- `HINT: <text>` → append `<text>` verbatim as your last line.
-- `ASK: <question> | <a> | <b> | <c>` → AskUserQuestion with those options in
-  that order, then run the `dosi-progress answer …` command it prints with
-  yes / later / never. On yes for `h_ontology`, continue with the
-  **dosi-ontology** skill; on yes for `h_team`, commit `dosi/` (never
-  `dosi-connections.yaml`).
-- nothing → add nothing.
+Do not bring up ontologies unless the user or a plugin hint does. When one
+is loaded, concept paths work wherever fields do (see the dosi-ontology
+skill).

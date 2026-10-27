@@ -1,0 +1,61 @@
+# The mapping that binds example-orders.ontology.yaml to model-orders.yaml.
+# Three files, each with one job: the model (tables, fields, joins, metrics),
+# the ontology (business concepts and how they relate), and this mapping
+# (which dataset key or column each concept and relationship is). The
+# mapping expressions name the model's own datasets and fields.
+version: 0.2.0.dev0
+name: sales_mapping
+description: Maps the Sales ontology onto the sales semantic model.
+
+ontology_ref:
+  name: Sales
+  iri: ./example-orders.ontology.yaml
+semantic_model_ref:
+  name: sales
+  iri: ./model-orders.yaml
+
+concept_mappings:
+- concept: Customer
+  object_mappings:
+  - referent_mappings:
+    - { relationship: id, expression: customers.customer_id }
+  link_mappings:
+  - object_mapping:
+      referent_mappings:
+      - { relationship: id, expression: customers.customer_id }
+    children:
+    - { object_mapping: { concept: Region, expression: customers.region }, relationship: region }
+    - { object_mapping: { concept: Date, expression: customers.signup_date }, relationship: signup_date }
+- concept: Product
+  object_mappings:
+  - referent_mappings:
+    - { relationship: id, expression: products.product_id }
+  link_mappings:
+  - object_mapping:
+      referent_mappings:
+      - { relationship: id, expression: products.product_id }
+    children:
+    - { object_mapping: { concept: Category, expression: products.category }, relationship: category }
+    - { object_mapping: { concept: UnitCost, expression: products.unit_cost }, relationship: unit_cost }
+- concept: Order
+  object_mappings:
+  - referent_mappings:
+    - { relationship: id, expression: orders.order_id }
+  link_mappings:
+  - object_mapping:
+      referent_mappings:
+      - { relationship: id, expression: orders.order_id }
+    children:
+    - object_mapping:
+        concept: Customer
+        referent_mappings:
+        - { relationship: id, expression: orders.customer_id }
+      relationship: placed_by
+    - object_mapping:
+        concept: Product
+        referent_mappings:
+        - { relationship: id, expression: orders.product_id }
+      relationship: purchases
+    - { object_mapping: { concept: Date, expression: orders.order_date }, relationship: order_date }
+    - { object_mapping: { concept: OrderStatus, expression: orders.status }, relationship: status }
+    - { object_mapping: { concept: Amount, expression: orders.amount }, relationship: amount }

@@ -1,14 +1,17 @@
 # Writing an ontology for dosi (model-first)
 
-> **Start from the complete example** in `${CLAUDE_PLUGIN_ROOT}/skills/dosi-ontology/references/example-orders.ontology.yaml`
-> (with its model `model-orders.yaml`): a validated three-concept ontology with value types,
-> links and every mapping section. Copy its structure; do not browse `dosi info` examples.
+> **Start from the complete example** in `${CLAUDE_PLUGIN_ROOT}/skills/dosi-ontology/references/`:
+> `example-orders.ontology.yaml` (concepts), `example-orders.mapping.yaml` (mappings) and their
+> model `model-orders.yaml` — validated, with value types, links and every mapping section.
+> Copy its structure; do not browse `dosi info` examples.
 
-Model-first: `dosi/model.yaml` stays the source of truth for tables, fields
-and joins; `dosi/ontology.yaml` adds concepts on top. Load both:
-`dosi --model dosi/model.yaml --ontology dosi/ontology.yaml …` (the session
-exports both). When `--model` is given it wins; the ontology's embedded
-`semantic_model` only has to make its mapping expressions resolvable.
+Model-first, three files with one job each: `dosi/model.yaml` stays the
+source of truth for tables, fields and joins; `dosi/ontology.yaml` holds the
+concepts and their relationships, nothing else; `dosi/mapping.yaml` says
+which dataset key or column each concept and relationship is, naming the
+model's own datasets and fields. dosi loads all three (the CLI finds them in
+`dosi/`; the MCP server follows them as they are written). Do not embed
+`ontology_mappings` in the ontology: that layout is deprecated.
 
 Complete small example (two concepts, two relationships between them — the
 case an ontology exists for):
@@ -56,48 +59,36 @@ ontology:
         roles: [{concept: Delay}]
         multiplicity: ManyToOne
         verbalizes: ["{Flight} has {Delay} on departure"]
+```
 
-ontology_mappings:
-  - name: flights_mapping
-    semantic_model:
-      name: flights_model            # = the semantic_model name in dosi/model.yaml
-      datasets:
-        - name: AIRPORT
-          source: main.airports
-          fields:
-            - name: code
-              expression: {dialects: [{dialect: ANSI_SQL, expression: code}]}
-        - name: FLIGHT
-          source: main.flights
-          fields:
-            - name: id
-              expression: {dialects: [{dialect: ANSI_SQL, expression: id}]}
-            - name: origin_code
-              expression: {dialects: [{dialect: ANSI_SQL, expression: origin_code}]}
-            - name: dest_code
-              expression: {dialects: [{dialect: ANSI_SQL, expression: dest_code}]}
-            - name: dep_delay
-              expression: {dialects: [{dialect: ANSI_SQL, expression: dep_delay}]}
-    concept_mappings:
-      - concept: Airport
-        object_mappings:
-          - referent_mappings: [{relationship: code, expression: AIRPORT.code}]
-      - concept: Flight
-        object_mappings:
-          - referent_mappings: [{relationship: id, expression: FLIGHT.id}]
-        link_mappings:
-          - object_mapping: {referent_mappings: [{relationship: id, expression: FLIGHT.id}]}
-            children:
-              - object_mapping:
-                  concept: Airport
-                  referent_mappings: [{relationship: code, expression: FLIGHT.origin_code}]
-                relationship: departs_from
-              - object_mapping:
-                  concept: Airport
-                  referent_mappings: [{relationship: code, expression: FLIGHT.dest_code}]
-                relationship: arrives_at
-              - object_mapping: {concept: Delay, expression: FLIGHT.dep_delay}
-                relationship: departure_delay
+and the mapping, in its own file (`dosi/mapping.yaml`), binding those
+concepts to the model's datasets and fields by name:
+
+```yaml
+version: 0.2.0.dev0
+name: flights_mapping
+ontology_ref: {name: Flights, iri: ./ontology.yaml}
+semantic_model_ref: {name: flights_model, iri: ./model.yaml}   # = the semantic_model name in dosi/model.yaml
+concept_mappings:
+  - concept: Airport
+    object_mappings:
+      - referent_mappings: [{relationship: code, expression: airports.code}]
+  - concept: Flight
+    object_mappings:
+      - referent_mappings: [{relationship: id, expression: flights.id}]
+    link_mappings:
+      - object_mapping: {referent_mappings: [{relationship: id, expression: flights.id}]}
+        children:
+          - object_mapping:
+              concept: Airport
+              referent_mappings: [{relationship: code, expression: flights.origin_code}]
+            relationship: departs_from
+          - object_mapping:
+              concept: Airport
+              referent_mappings: [{relationship: code, expression: flights.dest_code}]
+            relationship: arrives_at
+          - object_mapping: {concept: Delay, expression: flights.dep_delay}
+            relationship: departure_delay
 ```
 
 ## Link direction (read before writing links)
@@ -114,22 +105,44 @@ to look for — do not search the examples or the binary for one. To answer
 
 1. **Entities** — one `EntityType` concept per business thing the user talks
    about (usually one per dataset with a primary key). `identify_by` = its key
-   relationship.
+   relationship. A key of several columns (a store in a given month) lists
+   one relationship per column, and the mapping gives one referent each:
+
+   ```yaml
+   # ontology.yaml
+   - concept: Store
+     type: EntityType
+     identify_by: [ month, code ]
+     relationships:
+     - { name: month, roles: [ { concept: MonthKey } ], multiplicity: ManyToOne }
+     - { name: code, roles: [ { concept: StoreCode } ], multiplicity: ManyToOne }
+   # mapping.yaml
+   - concept: Store
+     object_mappings:
+     - referent_mappings:
+       - { relationship: month, expression: store_month.month_key }
+       - { relationship: code, expression: store_month.store_code }
+   ```
+
+   A link to such a concept (an order's store) names both parts the same
+   way, as `referent_mappings` under the link's `object_mapping`.
 2. **Value types** — `ValueType` concepts (extends `String`, `Integer`,
    `Decimal`, `Date`, …) for meaningful values (Delay, Amount, Region).
 3. **Relationships** — one per many→one link, named as a verb phrase from the
    many side (`placed_by`, `shipped_to`, `departs_from`), with `verbalizes`
    in plain language. Two links to the same concept get two names — that is
    the point.
-4. **Mappings** — map each concept to its dataset key and each link to the
-   foreign-key column, under `ontology_mappings`.
+4. **Mappings** — in `dosi/mapping.yaml`: each concept to its dataset key,
+   each link to the foreign-key column.
 5. Validate, then `dosi describe` and `dosi paths --from A --to B` to check
    it reads the way the user talks.
 
-Worth asking the user (Q7): multiplicity ("一个门店属于一个区域吗？"), names
-of parallel links ("下单客户" vs "收货客户"), whether a derived notion
-("大客户") is a concept or just a filter.
+Worth asking the user: multiplicity ("does a store belong to exactly one
+region?"), names of parallel links ("ordering customer" vs "receiving
+customer"), whether a derived notion ("key account") is a concept or just a
+filter.
 
-More: the bundled examples (`dosi info --format json` → `examples_dir`):
+More: the bundled examples (the `examples_dir` in `dosi info --format
+json`):
 `ossie-mini-flights/` (smallest), `aviation/` (model-first, realistic),
 `ossie-flights/` (the upstream reference ontology).

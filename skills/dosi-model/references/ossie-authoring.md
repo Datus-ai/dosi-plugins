@@ -1,89 +1,97 @@
-# Writing an Apache Ossie model for dosi
+# Writing dosi/model.yaml — shapes to start from
 
-A complete minimal model (the shape `dosi validate` accepts):
+The extension contract, [datus-contract.yaml](datus-contract.yaml), is the
+authority on every DATUS key: read a capability's block before using it.
+This page only shows the layering on one small model. More complete models
+are in dosi's examples (the `examples_dir` in `dosi info --format json`),
+and every key is explained at
+https://dosi.datus.ai/datus-extensions/.
+
+Replace `<dialect>` with the warehouse's expression dialect (`POSTGRESQL`,
+`SNOWFLAKE`, …; `ANSI_SQL` works everywhere) and `<v>` with the contract's
+version (`envelope.version.generated_value`, e.g. `1.12`).
 
 ```yaml
-version: "0.2.0.dev0"
-
+version: 0.2.0.dev0
 semantic_model:
   - name: sales
-    description: Orders, customers and products
+    description: Monthly sales by region
     datasets:
-      - name: orders                     # snake_case, unique
-        source: analytics.marts.orders   # the physical table, as the warehouse names it
-        primary_key: [order_id]
+      - name: orders                          # snake_case, unique
+        source: shop.orders                   # the table, as the warehouse names it
         fields:
-          - name: order_id
-            expression: {dialects: [{dialect: ANSI_SQL, expression: order_id}]}
+          - name: order_id                    # an identifier: queryable, not offered as a grouping
+            expression: {dialects: [{dialect: <dialect>, expression: order_id}]}
+            custom_extensions: [{vendor_name: DATUS, data: '{"v":"<v>","is_dimension":false}'}]
           - name: customer_id
-            expression: {dialects: [{dialect: ANSI_SQL, expression: customer_id}]}
-          - name: order_date
-            expression: {dialects: [{dialect: ANSI_SQL, expression: order_date}]}
-            dimension:
-              is_time: true              # makes it a time dimension (grain-able)
-          - name: status
-            expression: {dialects: [{dialect: ANSI_SQL, expression: status}]}
-          - name: amount
-            expression: {dialects: [{dialect: ANSI_SQL, expression: amount}]}
-
-      - name: customers
-        source: analytics.marts.customers
-        primary_key: [customer_id]
-        fields:
-          - name: customer_id
-            expression: {dialects: [{dialect: ANSI_SQL, expression: customer_id}]}
+            expression: {dialects: [{dialect: <dialect>, expression: customer_id}]}
+            custom_extensions: [{vendor_name: DATUS, data: '{"v":"<v>","is_dimension":false}'}]
           - name: region
-            expression: {dialects: [{dialect: ANSI_SQL, expression: region}]}
-
-    relationships:                       # many → one, from the fact to the dimension
-      - name: orders_to_customers
-        from: orders
-        to: customers
-        from_columns: [customer_id]
-        to_columns: [customer_id]
-
+            expression: {dialects: [{dialect: <dialect>, expression: region}]}
+          - name: month                       # business time, stored as text 'YYYY-MM'
+            expression: {dialects: [{dialect: <dialect>, expression: order_month}]}
+            dimension: {is_time: true}
+            custom_extensions:
+              - vendor_name: DATUS
+                data: '{"v":"<v>","requires":["time"],"time":{"format":"%Y-%m","storage":"string","granularity":"month"}}'
+          - name: amount
+            expression: {dialects: [{dialect: <dialect>, expression: amount}]}
+          - name: status
+            expression: {dialects: [{dialect: <dialect>, expression: status}]}
     metrics:
+      # base: one aggregate, durable conditions in CASE WHEN
       - name: revenue
-        description: Completed order amount, refunds excluded
-        expression:
-          dialects:
-            - dialect: ANSI_SQL
-              expression: SUM(CASE WHEN orders.status = 'completed' THEN orders.amount END)
+        description: Amount of completed orders (cancelled ones excluded)
+        expression: {dialects: [{dialect: <dialect>, expression: "SUM(CASE WHEN orders.status = 'completed' THEN orders.amount END)"}]}
       - name: order_count
-        description: Number of orders
-        expression: {dialects: [{dialect: ANSI_SQL, expression: COUNT(orders.order_id)}]}
+        description: Number of completed orders
+        expression: {dialects: [{dialect: <dialect>, expression: "COUNT(DISTINCT CASE WHEN orders.status = 'completed' THEN orders.order_id END)"}]}
+      # derived: compose metrics by name; `expression` is the expansion, written by dosi-fill-derived
       - name: avg_order_value
-        description: Revenue per order
-        expression: {dialects: [{dialect: ANSI_SQL, expression: SUM(orders.amount) / COUNT(orders.order_id)}]}
+        description: Average amount of a completed order
+        expression: {dialects: [{dialect: <dialect>, expression: "SUM(CASE WHEN orders.status = 'completed' THEN orders.amount END) / COUNT(DISTINCT CASE WHEN orders.status = 'completed' THEN orders.order_id END)"}]}
+        custom_extensions:
+          - vendor_name: DATUS
+            data: '{"v":"<v>","derive":{"type":"compose","expr":"revenue / order_count"}}'
+      # window: rank regions within each month (query by month and region)
+      - name: revenue_rank
+        description: Rank of the region by revenue within the month, 1 = highest
+        expression: {dialects: [{dialect: <dialect>, expression: "SUM(CASE WHEN orders.status = 'completed' THEN orders.amount END)"}]}
+        custom_extensions:
+          - vendor_name: DATUS
+            data: '{"v":"<v>","window":{"base":"revenue","rank":{"function":"rank","order":{"by":"value","direction":"desc"},"partition":{"mode":"query_dimensions_except","exclude":["orders.region"]}}}}'
+      # composed over the window: derive.expr names the rank, so it runs after ranking
+      - name: is_top_region
+        description: 1 when the region is among the month's top 3 by revenue, else 0
+        expression: {dialects: [{dialect: <dialect>, expression: "CASE WHEN SUM(CASE WHEN orders.status = 'completed' THEN orders.amount END) <= 3 THEN 1 ELSE 0 END"}]}
+        custom_extensions:
+          - vendor_name: DATUS
+            data: '{"v":"<v>","derive":{"type":"compose","expr":"CASE WHEN revenue_rank <= 3 THEN 1 ELSE 0 END"}}'
 ```
 
-## Rules dosi enforces
+What the layers buy: `is_top_region` reads `revenue_rank`, which reads
+`revenue`. Change the definition of revenue once and the rank and flag
+follow. Copying the formula into each, or computing the rank in a dataset's
+SQL, loses that, and the model can no longer be queried at another grain.
 
-- **Metric kinds are inferred** from the expression: one aggregate
-  (`SUM/COUNT/COUNT(DISTINCT)/AVG/MIN/MAX`) = aggregate; aggregate ÷ aggregate
-  = ratio; any other combination of aggregates = expression. Write the
-  arithmetic, dosi plans it correctly (no double counting across joins).
-- **Columns in metrics are qualified** `dataset.field`.
-- **Relationships** are many→one (`from` = the many side). Two paths between
-  the same datasets are allowed; queries then name the path
-  (`relationship_name.field`).
-- **Time**: mark date/timestamp fields `dimension: {is_time: true}`. Queries
-  group by `dataset.field:month` or `metric_time:week`.
-- **Source** is the table name as the warehouse resolves it (DuckDB local
-  files: `main.<table>`).
-- `primary_key` on every dataset that is the "one" side of a relationship.
+Points that trip people up:
 
-## What to model first
-
-1. The fact table behind the user's question, with its date column as a time
-   dimension.
-2. The dimension tables the question groups or filters by, with relationships.
-3. 3–8 metrics: the ones the question needs, plus obvious companions
-   (count, sum of the main amount, distinct count of the main entity).
-
-Ambiguities worth asking (Q4): refunds/negative amounts, cancelled or test
-rows, which of two date columns is "the" date, which of two join paths is the
-default, gross vs net.
-
-Larger models and every extension (windows, parameters, semi-additive
-metrics) are documented on the dosi docs site; validate after every change.
+- Columns in metric expressions are qualified `dataset.field`.
+- `derive.expr` uses metric names; `expression` is the same formula with the
+  names expanded (same filters, DISTINCT and NULL handling). For a derive
+  over a window it is only the approximation validation needs. Do not
+  expand it by hand: write a placeholder aggregate and run
+  `dosi-fill-derived`.
+- A window's `partition.exclude` lists dimensions every query of it must
+  group by (here `orders.region`).
+- Relationships are many → one (`from` = the many side), with
+  `from_columns` / `to_columns`; declare a `primary_key` only from evidence.
+- A dataset `source` may be a SQL query only when the model cannot express
+  the row set natively; say why in its `description`.
+- A field's `expression` is SQL over its dataset's own columns. It cannot
+  name another field (the warehouse rejects that at query time, after
+  validation passed) and cannot hold a subquery. A value that needs either
+  is a column of a dataset whose `source` is SQL.
+- A window cannot read a D-LOD field: a per-customer value that a region
+  ranks or averages over is a column of a dataset whose source is grouped by
+  customer, not a `fixed(...)` field.

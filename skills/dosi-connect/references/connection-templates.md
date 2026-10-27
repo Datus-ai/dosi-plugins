@@ -1,12 +1,15 @@
 # Connection templates
 
-`dosi-connections.yaml` uses the Datus `datasources:` vocabulary. Every secret
-is a `${VAR}` reference — dosi reads it from the environment when the
-connection is used, and a missing one fails with `missing_env` naming it.
-Mark one entry `default: true`; `--execute` without `--connection` uses it.
+`dosi-connections.yaml` uses the Datus `datasources:` vocabulary. Mark one
+entry `default: true`: queries without a named connection run on it, and SQL
+is compiled in its dialect.
 
-Write only what the user told you or what is non-secret. After writing, tell
-the user which variables to set, as `! export NAME=...` lines.
+Write only what the user told you. A secret goes in as a `${VAR}` placeholder
+that the user then fills: either they replace it in this file with the value
+(the file is git-ignored; a literal password is fine there), or they add
+`VAR=value` to `~/.config/dosi/secrets.env`. dosi reads both on every call, so
+nothing needs a restart. An unfilled placeholder fails with `missing_env`
+naming it. Never ask for the value in the chat.
 
 ## Snowflake (key-pair; recommended)
 
@@ -89,6 +92,8 @@ datasources:
 
 Same shape: `type: clickhouse | trino | oracle | sqlite`, with `host`, `port`,
 `username`, `password: ${VAR}`, `database` (Trino also `catalog`, `schema`).
-SQLite and DuckDB take `uri: duckdb:///<abs path>` / `uri: sqlite:///<abs path>`.
+SQLite and DuckDB take the file's absolute path as it is: `uri: /Users/me/data/shop.duckdb`.
+(In URL form an absolute path needs four slashes, `duckdb:////Users/...`; with three
+it is relative to the working directory.)
 
 The full key list per connector is in the dosi docs (Connectors).
