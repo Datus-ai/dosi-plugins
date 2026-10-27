@@ -2,19 +2,22 @@
 # dosi-progress — the progressive-disclosure engine (RFC §3.2, §6.4).
 #
 # Per-project state lives in <plugin data>/progress/<hash>.state as
-# key=value lines. Hooks `record` what happened; skills ask `next` at the end
-# of an answer and append what it prints, verbatim, or nothing at all.
+# key=value lines. Hooks `record` what happened and, during a turn that
+# answers a question, ask `next --pending` for the one hint or question due.
+# The agent passes it on in the user's language.
 #
 #   dosi-progress stage                 print S0..S6
-#   dosi-progress next                  at most one one-time hint:
+#   dosi-progress next [--pending]      at most one one-time hint (--pending:
+#                                       during a turn, counting its answer):
 #                                         HINT: <text>
 #                                         ASK: <question> | <opt1> | <opt2> | <opt3>
 #                                       (prints nothing when there is none)
 #   dosi-progress peek                  what `next` would print, without using it up
 #   dosi-progress answer <ask> <yes|later|never>
-#   dosi-progress record <event> [n]    connected | model | answered | select |
-#                                       ambiguous | lineage | ontology |
+#   dosi-progress record <event> [n]    connected | model | queried | answered |
+#                                       select | ambiguous | lineage | ontology |
 #                                       entity_question | datasets <n> | relationships <n>
+#   dosi-progress turn                  the turn ended: one answer if it queried
 #   dosi-progress dismiss <hint>        never show that hint again
 #   dosi-progress status                the raw state, for /dosi and debugging
 self_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -36,6 +39,9 @@ set_() {
   mv "$tmp" "$file"
 }
 incr() { set_ "$1" $(( $(num "$1") + ${2:-1} )); }
+# Answers so far; during a turn (`next --pending`) the one being written
+# counts too.
+answers() { echo $(( $(num answered) + ${PENDING_ANSWER:-0} )); }
 
 # S4 thresholds (RFC Q5: start here, calibrate with eval E4).
 S4_MIN_DATASETS=3
@@ -43,6 +49,9 @@ S4_MIN_SELECTS=2
 
 ontology_ready() {
   [ "$(num model)" -ge 1 ] || return 1
+  # Not on the first answers: the suggestion only makes sense once the user
+  # has asked a few questions across entities.
+  [ "$(answers)" -ge 3 ] || return 1
   [ "$(num datasets)" -ge "$S4_MIN_DATASETS" ] || return 1
   [ "$(num relationships)" -ge 1 ] || return 1
   [ "$(num selects)" -ge "$S4_MIN_SELECTS" ] \
@@ -66,7 +75,7 @@ may_show() {
   [ "$(num "never_$1")" -ge 1 ] && return 1
   after=$(get "after_$1")
   if [ -n "$after" ]; then
-    [ "$(num answered)" -ge "$after" ] || return 1
+    [ "$(answers)" -ge "$after" ] || return 1
     return 0
   fi
   [ "$(num "shown_$1")" -ge 1 ] && return 1
@@ -90,30 +99,30 @@ sync_files() {
 model_settled() {
   since=$(num model_since)
   [ "$since" -gt 0 ] || return 1
-  [ $(( $(date +%s) - since )) -ge 86400 ] && [ "$(num answered)" -ge 3 ]
+  [ $(( $(date +%s) - since )) -ge 86400 ] && [ "$(answers)" -ge 3 ]
 }
 
 next() {
   sync_files
   if [ "$(num ontology)" -ge 1 ] && may_show h_ontology_ready; then
     shown h_ontology_ready
-    echo "HINT: 现在可以直接按业务概念提问了，比如「客户常去哪些门店」；想看概念关系图也可以说一声。"
+    echo "HINT: You can now ask by business concept, and ask to see how the concepts connect."
     return
   fi
   if [ "$(num ontology)" -lt 1 ] && ontology_ready && may_show h_ontology; then
     shown h_ontology
-    echo "ASK: 你的问题涉及多个业务实体。建一个 ontology，按业务概念来问会更准，要了解一下吗？ | 了解一下 | 以后再说 | 不再提示"
+    echo "ASK: Your recent questions join several kinds of business objects. An ontology names those objects and how they relate, so you can ask in business terms and the joins come out right. It takes a few minutes and adds two files; data and metrics stay as they are. Build it now? | Build it now | Later | Never ask again"
     echo "(answer with: dosi-progress answer h_ontology yes|later|never)"
     return
   fi
-  if [ "$(num answered)" -ge 1 ] && [ "$(num lineage)" -lt 1 ] && may_show h_lineage; then
+  if [ "$(answers)" -ge 1 ] && [ "$(num lineage)" -lt 1 ] && may_show h_lineage; then
     shown h_lineage
-    echo "HINT: 这个数是按模型里定义的指标算的，想看它是怎么算出来的可以问我。"
+    echo "HINT: Ask how any of these numbers is computed to see where it comes from."
     return
   fi
   if [ "$(num model)" -ge 1 ] && model_settled && in_git_repo && may_show h_team; then
     shown h_team
-    echo "ASK: 模型已经稳定了一阵，要把 dosi/ 提交给团队共享吗？ | 提交 | 以后再说 | 不再提示"
+    echo "ASK: The model has been stable for a while. Commit the dosi/ folder to this git repository, so everyone who pulls it uses the same metric definitions? Connections and passwords are not committed. | Commit it | Later | Never ask again"
     echo "(answer with: dosi-progress answer h_team yes|later|never)"
     return
   fi
@@ -123,7 +132,23 @@ cmd=${1:-status}
 [ $# -gt 0 ] && shift
 case "$cmd" in
   stage) sync_files; stage ;;
-  next) next ;;
+  next)
+    # `next --pending`: asked during a turn, from the first query's hook.
+    # The answer being written counts, and one hint per turn at most.
+    if [ "${1:-}" = --pending ]; then
+      [ "$(num hinted_turn)" -ge 1 ] && exit 0
+      [ "$(num queried)" -ge 1 ] && PENDING_ANSWER=1
+      out=$(next)
+      [ -n "$out" ] && [ -z "${PEEK:-}" ] && set_ hinted_turn 1
+      [ -n "$out" ] && printf '%s\n' "$out"
+    else
+      next
+    fi ;;
+  turn)
+    # A user question counts once however many queries answered it: the
+    # hints wait for a few questions, not a few calls (one analysis ran 15).
+    if [ "$(num queried)" -ge 1 ]; then incr answered; set_ queried 0; fi
+    set_ hinted_turn 0 ;;
   peek) PEEK=1 next ;;
   answer)
     case "${2:-}" in
@@ -136,6 +161,7 @@ case "$cmd" in
     ev=${1:?event}
     case "$ev" in
       connected|model|lineage|ontology) set_ "$ev" 1 ;;
+      queried) set_ queried 1 ;;
       answered) incr answered ;;
       select) incr selects ;;
       ambiguous) incr ambiguous ;;
@@ -153,5 +179,5 @@ case "$cmd" in
       *) echo "dosi-progress: unknown event $ev" >&2; exit 2 ;;
     esac ;;
   status) sync_files; echo "stage=$(stage)"; cat "$file" ;;
-  *) echo "usage: dosi-progress stage|next|answer|record|dismiss|status" >&2; exit 2 ;;
+  *) echo "usage: dosi-progress stage|next|turn|answer|record|dismiss|status" >&2; exit 2 ;;
 esac

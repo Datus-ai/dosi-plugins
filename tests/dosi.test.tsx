@@ -157,8 +157,8 @@ describe('parsers', () => {
   })
 
   test('the ASK line of dosi-progress peek', async () => {
-    const peek = 'ASK: 建一个 ontology 吗？ | 了解一下 | 以后再说 | 不再提示\n(answer with: dosi-progress answer h_ontology yes|later|never)'
-    expect(parseAsk(peek)).toEqual({ id: 'h_ontology', text: '建一个 ontology 吗？', options: ['了解一下', '以后再说', '不再提示'] })
+    const peek = 'ASK: Build an ontology now? | Build it now | Later | Never ask again\n(answer with: dosi-progress answer h_ontology yes|later|never)'
+    expect(parseAsk(peek)).toEqual({ id: 'h_ontology', text: 'Build an ontology now?', options: ['Build it now', 'Later', 'Never ask again'] })
     expect(parseAsk('HINT: something')).toBe(null)
   })
 
@@ -238,14 +238,14 @@ describe('band', () => {
 
   test('an ASK from the progress engine gets buttons', async ($, on) => {
     const world = newWorld({
-      peek: 'ASK: 建一个 ontology 吗？ | 了解一下 | 以后再说 | 不再提示\n(answer with: dosi-progress answer h_ontology yes|later|never)',
+      peek: 'ASK: Build an ontology now? | Build it now | Later | Never ask again\n(answer with: dosi-progress answer h_ontology yes|later|never)',
     })
     project(on, world)
     await dosiCommand($ as never, '')
     const ui = await $.ui.mount({ plugin: 'dosi', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
-    expect((await ui.findAll({ type: 'Button' })).map(b => b.props.label)).toEqual(['了解一下', '以后再说', '不再提示'])
+    expect((await ui.findAll({ type: 'Button' })).map(b => b.props.label)).toEqual(['Build it now', 'Later', 'Never ask again'])
     await ui.press({ key: 'ask-0' })
-    expect(world.prompts.at(-1)).toContain('了解一下')
+    expect(world.prompts.at(-1)).toContain('Build it now')
     await ui.unmount()
   })
 })
