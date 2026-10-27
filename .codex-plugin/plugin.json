@@ -1,0 +1,28 @@
+{
+  "name": "dosi",
+  "description": "Dosi semantic layer for coding agents: connect a warehouse, build an Apache Ossie model with governed metrics, answer questions through it, see lineage. Runs fully local.",
+  "keywords": [
+    "semantic-layer",
+    "metrics",
+    "ossie",
+    "ontology",
+    "sql",
+    "data"
+  ],
+  "mcpServers": {
+    "dosi": {
+      "command": "sh",
+      "args": [
+        "-c",
+        "for f in \"${CODEX_HOME:-$HOME/.codex}\"/plugins/cache/*/dosi/*/bin/dosi-mcp; do [ -x \"$f\" ] && exec \"$f\"; done; echo 'dosi-mcp: plugin not found under CODEX_HOME/plugins/cache' >&2; exit 1"
+      ],
+      "env_vars": [
+        "CODEX_HOME",
+        "DOSI_PLUGIN_DATA",
+        "DOSI_DEV_BIN_DIR",
+        "DOSI_SECRETS_FILE"
+      ]
+    }
+  },
+  "hooks": "./hooks/codex-hooks.json"
+}
