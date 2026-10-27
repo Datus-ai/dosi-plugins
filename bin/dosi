@@ -1,16 +1,17 @@
 #!/bin/sh
 # dosi shim — on PATH while the plugin is enabled (Claude Code adds bin/).
-# Runs the dosi binary this plugin version pins (RFC Q3), in order:
-#   1. $DOSI_BIN, exported by the SessionStart hook
-#   2. the pinned install under the plugin data dir
-#   3. another `dosi` on PATH whose version matches
+# Runs, in order:
+#   1. the release the plugin installed (bin/current under the plugin data
+#      dir), when it is no older than DOSI_MIN_VERSION — or DOSI_DEV_BIN_DIR
+#   2. another `dosi` on PATH no older than DOSI_MIN_VERSION, while the
+#      plugin's own install is missing or pending
 # and otherwise answers with the CLI's JSON error shape, so the agent reads
 # `dosi_installing` / `install_failed` like any other dosi error.
 self_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 DOSI_LIB_ROOT=$(dirname -- "$self_dir")
 . "$DOSI_LIB_ROOT/hooks/lib.sh"
 
-want=$(dosi_plugin_version)
+want=$(dosi_min_version)
 
 # The project's model and ontology without --model: a model written earlier
 # in this session is not in the env file SessionStart wrote.
@@ -21,14 +22,16 @@ fi
 if [ -z "${DOSI_ONTOLOGY:-}" ] && [ -f "$proj/dosi/ontology.yaml" ]; then
   DOSI_ONTOLOGY="$proj/dosi/ontology.yaml"; export DOSI_ONTOLOGY
 fi
-
-if [ -n "${DOSI_BIN:-}" ] && [ -x "$DOSI_BIN" ]; then
-  exec "$DOSI_BIN" "$@"
+if [ -z "${DOSI_MAPPING:-}" ] && [ -f "$proj/dosi/mapping.yaml" ]; then
+  DOSI_MAPPING="$proj/dosi/mapping.yaml"; export DOSI_MAPPING
 fi
 
-pinned="$(dosi_bin_dir)/dosi"
-if [ -x "$pinned" ] && [ -f "$(dosi_bin_dir)/.ok" ]; then
-  exec "$pinned" "$@"
+# Connection secrets the user keeps outside the project (optional): the
+# same file the MCP server reads with --env-file.
+dosi_load_secrets
+
+if dosi_bin_ready; then
+  exec "$(dosi_bin_dir)/dosi" "$@"
 fi
 
 # Another dosi on PATH, skipping this shim's own directory.
@@ -39,23 +42,23 @@ for dir in $PATH; do
   [ -x "$dir/dosi" ] || continue
   IFS=$old_ifs
   have=$("$dir/dosi" --version 2>/dev/null | awk '{print $2}')
-  if [ "$have" = "$want" ]; then
+  if dosi_version_ge "$have" "$want"; then
     exec "$dir/dosi" "$@"
   fi
   IFS=:
 done
 IFS=$old_ifs
 
-state_dir=$(dosi_bin_dir)
-if [ -f "$state_dir/.failed" ]; then
+state_dir="$(dosi_data)/bin"
+if [ -f "$state_dir/.failed" ] && [ ! -f "$state_dir/.lock" ]; then
   reason=$(tail -n 3 "$state_dir/.failed" 2>/dev/null)
-  printf '{"code":"install_failed","message":"dosi %s could not be installed","reason":"%s","hint":"Check the network, or retry with the China mirror: DOSI_SOURCE=oss sh %s/hooks/install.sh (DOSI_VERSION=%s DOSI_INSTALL_DIR=%s)"}\n' \
-    "$want" "$(json_str "$reason")" "$DOSI_LIB_ROOT" "$want" "$state_dir"
+  printf '{"code":"install_failed","message":"dosi could not be installed (this plugin needs %s or newer)","reason":"%s","hint":"Check the network, then run dosi-upgrade; in mainland China set DOSI_SOURCE=oss"}\n' \
+    "$want" "$(json_str "$reason")"
+  # Try again in the background, so the next call can succeed.
+  dosi_install_in_background
   exit 3
 fi
-printf '{"code":"dosi_installing","message":"dosi %s is being installed in the background (first run, about 20s)","hint":"Wait a few seconds and run the same command again; nothing to tell the user."}\n' "$want"
+printf '{"code":"dosi_installing","message":"the newest dosi is being installed in the background (about 20s)","hint":"Wait a few seconds and run the same command again; nothing to tell the user."}\n'
 # Start the install if nobody has (e.g. the session began before the plugin).
-if [ ! -f "$state_dir/.lock" ]; then
-  sh "$DOSI_LIB_ROOT/hooks/ensure-binary.sh" >/dev/null 2>&1 &
-fi
+[ -f "$state_dir/.lock" ] || dosi_install_in_background
 exit 3

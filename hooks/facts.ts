@@ -31,7 +31,7 @@ export async function progress($: EngineInterface, args: string[]): Promise<stri
   return run.code === 0 ? run.out.trim() : ''
 }
 
-/** The pinned dosi through the plugin's shim, JSON out, parsed. */
+/** The installed dosi through the plugin's shim, JSON out, parsed. */
 export async function dosi($: EngineInterface, root: string, args: string[]): Promise<unknown> {
   const run = await sh($, root, [`${$.plugin.root}/bin/dosi`, '--format', 'json', ...args])
   return extractJson(run.out)

@@ -1,0 +1,80 @@
+#!/bin/sh
+# dosi-upgrade — which dosi release this plugin runs, whether a newer one is
+# out, and installing it. The agent runs it when the user asks which version
+# runs or to upgrade (the dosi-upgrade skill).
+#
+#   dosi-upgrade --check   {"current":"0.1.15","latest":"0.1.16","newer":true}
+#   dosi-upgrade           installs the newest release when it is newer than
+#                          the current one:
+#                          {"from":"0.1.15","to":"0.1.16","changed":true,...}
+#
+# The CLI uses a new release at once; a running MCP server keeps the one it
+# started with until the agent host restarts it. Exit 0 when it ran, 3 when
+# the newest release could not be found or installed (JSON `code`).
+# DOSI_MANIFEST_URL replaces the release manifest's address (tests).
+self_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+DOSI_LIB_ROOT=$(dirname -- "$self_dir")
+. "$DOSI_LIB_ROOT/hooks/lib.sh"
+
+check=0
+[ "${1:-}" = --check ] && check=1
+
+if [ -n "${DOSI_DEV_BIN_DIR:-}" ]; then
+  have=$("$DOSI_DEV_BIN_DIR/dosi" --version 2>/dev/null | awk '{print $2}')
+  printf '{"current":"%s","dev_build":"%s","note":"DOSI_DEV_BIN_DIR is set: the plugin runs that build and installs no release"}\n' \
+    "$have" "$(json_str "$DOSI_DEV_BIN_DIR")"
+  exit 0
+fi
+
+# The newest release's version, from the manifest the installer reads too.
+latest_version() {
+  url=${DOSI_MANIFEST_URL:-}
+  if [ -z "$url" ]; then
+    case "$(dosi_source)" in
+      oss) url="${DOSI_OSS_MIRROR:-https://dosi-dist.oss-cn-beijing.aliyuncs.com}/latest/manifest.json" ;;
+      cloudflare) url="${DOSI_MIRROR:-https://dosi.datus.ai/dl}/latest/manifest.json" ;;
+      *) url="https://github.com/${DOSI_DIST_REPO:-Datus-ai/dosi-dist}/releases/latest/download/manifest.json" ;;
+    esac
+  fi
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL --max-time 20 "$url" 2>/dev/null
+  else
+    wget -qO- --timeout=20 "$url" 2>/dev/null
+  fi | grep -o '"version" *: *"[^"]*"' | head -n 1 | sed 's/.*"\([^"]*\)"$/\1/'
+}
+
+bin="$(dosi_data)/bin"
+mkdir -p "$bin"
+current=$(dosi_current_version)
+latest=$(latest_version)
+# Remembered for session start, which mentions a newer release once a day.
+[ -n "$latest" ] && printf '%s\n' "$latest" > "$bin/.latest"
+
+if [ $check -eq 1 ]; then
+  if [ -z "$latest" ]; then
+    printf '{"current":"%s","code":"latest_unknown","message":"the release list could not be reached","hint":"check the network; in mainland China set DOSI_SOURCE=oss"}\n' "$current"
+    exit 3
+  fi
+  if dosi_version_ge "$current" "$latest"; then newer=false; else newer=true; fi
+  printf '{"current":"%s","latest":"%s","newer":%s}\n' "$current" "$latest" "$newer"
+  exit 0
+fi
+
+if [ -n "$latest" ] && dosi_version_ge "$current" "$latest"; then
+  printf '{"from":"%s","to":"%s","changed":false}\n' "$current" "$current"
+  exit 0
+fi
+if ! out=$(sh "$DOSI_LIB_ROOT/hooks/ensure-binary.sh" --upgrade 2>&1); then
+  reason=$(tail -n 3 "$bin/.failed" 2>/dev/null)
+  [ -n "$reason" ] || reason=$out
+  printf '{"code":"install_failed","message":"the newest dosi could not be installed","reason":"%s","current":"%s"}\n' \
+    "$(json_str "$reason")" "$current"
+  exit 3
+fi
+to=$(dosi_current_version)
+if [ "$to" = "$current" ]; then
+  printf '{"from":"%s","to":"%s","changed":false}\n' "$current" "$to"
+else
+  printf '{"from":"%s","to":"%s","changed":true,"note":"the CLI uses it now; a running MCP server switches when the agent host restarts it"}\n' \
+    "$current" "$to"
+fi

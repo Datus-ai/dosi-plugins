@@ -19,7 +19,7 @@ export type DosiFacts = {
   stage: string
   /** A pending one-time question from `dosi-progress peek`: text and options. */
   ask: { id: string; text: string; options: string[] } | null
-  /** False while the pinned binary is still downloading. */
+  /** False while the dosi binary is still downloading. */
   isBinReady: boolean
   /** What the project folder holds that step 1 can connect from. */
   sources: string[]
