@@ -10,9 +10,11 @@
 #     dosi-fill-derived, dosi-upgrade): quoted arguments are fine, but no $,
 #     backquote, redirection, pipe, chaining, glob, second line, or path
 #     outside the project;
-#   * writing dosi-connections.yaml with a quoted here-document and nothing
-#     else (the file editor would echo the password back, see the guard),
-#     `echo dosi-connections.yaml >> .gitignore`, and `mkdir -p dosi/build`.
+#   * writing dosi-connections.yaml with a quoted here-document (the file
+#     editor would echo the password back, see the guard), optionally followed
+#     by one plain plugin command as above, after `&&` on its first line or on
+#     the line after it; `echo dosi-connections.yaml >> .gitignore`, and
+#     `mkdir -p dosi/build`.
 # Everything else goes through the normal permission prompt. The config-read
 # guard runs as well, and its deny wins.
 DOSI_LIB_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
@@ -55,19 +57,29 @@ plain_command() {
 }
 
 # "yes" when $1 writes dosi-connections.yaml with a quoted here-document and
-# does nothing else.
+# does nothing else; "then <command>" when one more command follows it, after
+# `&&` on the first line or on a line after the terminator. The caller checks
+# that command with plain_command.
 connections_heredoc() {
   printf '%s\n' "$1" | awk -v proj="$(dosi_project)" '
     NR == 1 {
-      if ($0 !~ /^cat >>? ?[^ <>]+ <<-? ?(\047[A-Za-z_]+\047|"[A-Za-z_]+")$/) { bad = 1; exit }
-      target = $0; sub(/^cat >>? ?/, "", target); sub(/ <<.*$/, "", target)
+      line = $0
+      if (match(line, / && /)) { rest = substr(line, RSTART + 4); line = substr(line, 1, RSTART - 1) }
+      if (line !~ /^cat >>? ?[^ <>]+ <<-? ?(\047[A-Za-z_]+\047|"[A-Za-z_]+")$/) { bad = 1; exit }
+      target = line; sub(/^cat >>? ?/, "", target); sub(/ <<.*$/, "", target)
       if (target != "dosi-connections.yaml" && target != proj "/dosi-connections.yaml") { bad = 1; exit }
-      tag = $0; sub(/^.*<<-? ?/, "", tag); gsub(/[\047"]/, "", tag)
+      tag = line; sub(/^.*<<-? ?/, "", tag); gsub(/[\047"]/, "", tag)
       next
     }
-    done && $0 != "" { bad = 1; exit }
-    !done && $0 == tag { done = 1 }
-    END { print (bad || !done) ? "no" : "yes" }'
+    !done { if ($0 == tag) done = 1; next }
+    $0 == "" { next }
+    rest != "" { bad = 1; exit }
+    { rest = $0 }
+    END {
+      if (bad || !done) print "no"
+      else if (rest == "") print "yes"
+      else print "then " rest
+    }'
 }
 
 case "$tool" in
@@ -98,7 +110,13 @@ case "$tool" in
         allow "dosi-connections.yaml into .gitignore" ;;
       "mkdir -p dosi/build"|"mkdir -p dosi"|"mkdir -p $(dosi_project)/dosi/build") allow "dosi scratch folder" ;;
     esac
-    [ "$(connections_heredoc "$cmd")" = yes ] && allow "dosi-connections.yaml"
+    heredoc=$(connections_heredoc "$cmd")
+    case "$heredoc" in
+      yes) allow "dosi-connections.yaml" ;;
+      "then "*)
+        [ "$(plain_command "${heredoc#then }")" = yes ] \
+          && allow "dosi-connections.yaml, then a dosi command" ;;
+    esac
     [ "$(plain_command "$cmd")" = yes ] && allow "dosi command" ;;
 esac
 exit 0

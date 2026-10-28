@@ -38,8 +38,9 @@ Never open `dosi-connections.yaml`, `secrets.env`, `.env*` or `profiles.yml`.
   before the first look.
 - **The DATUS extensions**: [references/datus-contract.yaml](references/datus-contract.yaml)
   is dosi's contract for every extension key (`window`, `derive`, `time`,
-  `lod`, `parameter_declaration`, …) with an example of each. Read a
-  capability's block before using it and never invent keys.
+  `lod`, `parameter_declaration`, …) with an example of each. Read the whole
+  file once (about 700 lines) before the first extension key you write,
+  rather than searching it, and never invent keys.
   [references/ossie-authoring.md](references/ossie-authoring.md) shows the
   layering on one small model.
 - **Validate**: in Claude Code a hook validates every save of `dosi/*.yaml`.
@@ -50,9 +51,10 @@ Never open `dosi-connections.yaml`, `secrets.env`, `.env*` or `profiles.yml`.
 - **Derived metrics**: `dosi-fill-derived` (step 4).
 - **Check against reference numbers**: `dosi-reconcile` (step 5).
 
-Work from the project folder with relative paths. Read and search this
-plugin's references and dosi's examples (the `examples_dir` in `dosi info
---format json`) with the file tools (Read, Grep, Glob), not the shell. Keep
+Work from the project folder with relative paths. Read this plugin's
+references (linked above) and dosi's examples by path with the Read tool, not
+the shell: the examples live under the `examples_dir` in `dosi info --format
+json`, and `<examples_dir>/orders/model.yaml` is a small complete one. Keep
 scratch files (reference rows, notes) under `dosi/build/`; `mkdir -p
 dosi/build` creates it. Run dosi commands as they are, without pipes or
 redirections.
