@@ -1,5 +1,5 @@
 {
-  "description": "dosi: zero-setup binary, project detection, config-read guard, validate-on-edit, progress tracking",
+  "description": "dosi: installs dosi, project context, config-read guard, no prompts for dosi's own calls, validate-on-edit, progress hints",
   "modules": [
     "./register.tsx"
   ],
@@ -18,7 +18,7 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "Read|Grep|Glob|Bash",
+        "matcher": "Read|Grep|Glob|Bash|Write|Edit|MultiEdit|NotebookEdit",
         "hooks": [
           {
             "type": "command",
@@ -26,11 +26,21 @@
             "timeout": 10
           }
         ]
+      },
+      {
+        "matcher": "Bash|Read|Grep|Glob|Write|Edit|MultiEdit|Skill|mcp__plugin_dosi_dosi__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/allow-dosi.sh\"",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "PostToolUse": [
       {
-        "matcher": "Write|Edit|MultiEdit",
+        "matcher": "Write|Edit|MultiEdit|Bash",
         "hooks": [
           {
             "type": "command",
@@ -40,11 +50,22 @@
         ]
       },
       {
-        "matcher": "Bash",
+        "matcher": "Bash|mcp__plugin_dosi_dosi__.*",
         "hooks": [
           {
             "type": "command",
             "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/post-dosi.sh\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/progress-stop.sh\"",
             "timeout": 10
           }
         ]

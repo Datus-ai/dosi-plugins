@@ -49,15 +49,23 @@ session start — skip Step 3.
 codex plugin marketplace add Datus-ai/dosi-plugins
 ```
 
-then tell the user to open `/plugins` and install "dosi". Codex's sandbox
-blocks network by default: cloud warehouses need network access enabled for
-dosi commands.
+then tell the user to open `/plugins` and install "dosi". The plugin installs
+the dosi binary itself on first use — skip Step 3. Codex's sandbox blocks
+network by default: cloud warehouses need network access enabled for dosi
+commands.
 
 **DeepSeek Harness**
 
+Tell the user to open **Plugins → Add plugin** and enter
+`https://github.com/Datus-ai/dosi-plugins` (DSH installs plugins with `pnpm`,
+which must be on PATH), or run:
+
 ```bash
-dsh plugin add github:Datus-ai/dosi-plugins
+npx @deepseek-ai/dsh plugin --profile web add github:Datus-ai/dosi-plugins
 ```
+
+The plugin installs the dosi binary itself on first use — skip Step 3. It
+runs dosi through the CLI in each session's workspace, not as an MCP server.
 
 **Gemini CLI**
 
@@ -78,7 +86,7 @@ npx -y skills add Datus-ai/dosi-plugins --skill '*'
 or copy `skills/*` from the repository into the agent's skills directory
 (`~/.agents/skills/` is read by several agents).
 
-## Step 3 — Install the dosi binary (all agents except Claude Code)
+## Step 3 — Install the dosi binary (Gemini CLI, Grok and other agents)
 
 ```bash
 curl -fsSL https://dosi.datus.ai/install.sh | sh
@@ -103,7 +111,9 @@ dosi --model "$EX/orders/model.yaml" list metrics
 
 ## Step 5 — Tell the user (two lines, nothing more)
 
+In the user's language:
+
 ```
-✓ Dosi 已安装（<version>，本地运行）。
-  直接问我一个数据问题就行，比如「上个月各渠道收入多少」——需要连接数据库时我会带你做。
+✓ Dosi installed (<version>, runs locally).
+  Just ask me a data question, e.g. "revenue by channel last month"; I'll walk you through connecting a database when it's needed.
 ```

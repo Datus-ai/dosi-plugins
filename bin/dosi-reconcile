@@ -1,0 +1,279 @@
+#!/usr/bin/env python3
+"""dosi-reconcile — check metrics against reference numbers, cell by cell.
+
+The modeling skill's verification step: the rows of a reference query (a
+published table, the source ETL's SELECT), written to a file by the user's
+database client, are matched on their keys against each metric run through
+dosi, and only the differences come back. One metric per query, so a
+metric that drops a zero-result group is caught rather than hidden by
+another metric's rows.
+
+  dosi-reconcile --reference dosi/build/ref.tsv \
+      --key metric_time__month=month --key region=region \
+      --check revenue=revenue --check order_count=orders \
+      --group-by metric_time:month,customers.region \
+      [--where SQL] [--start-time D] [--end-time D] [--param N=V] \
+      [--connection NAME] [--tolerance 1e-6] [--examples 5]
+
+--reference  the reference rows with a header line: .tsv (`mysql -B`),
+        .csv (`psql --csv`, `duckdb -csv`, `bq --format=csv`) or .json (an
+        array of objects). NULL, \\N and empty cells are NULL.
+--key   <group-by item or result column>=<reference column>, one per
+        grouping key: `customers.region`, `metric_time:month` or the result
+        column names dosi prints (`region`, `metric_time__month`).
+--check <metric>=<reference column>, one per metric to verify.
+--same-names  also check every reference column that has a metric of the
+        same name (a published table whose columns are the metrics).
+
+Keys compare as text after light normalization: dates and datetimes at
+midnight become YYYY-MM-DD, YYYY-MM becomes YYYY-MM-01, integral numbers
+lose their decimals. Values compare as numbers within --tolerance
+(absolute, and relative to the larger value); NULL equals only NULL.
+
+Exit status: 0 when the checks ran (passed or not: read `failed` in the
+output), 1 with --strict when a check failed, 2 on a dosi or usage error.
+Output: one JSON object; nothing is printed from the data beyond the
+differences shown in `examples`.
+"""
+import argparse
+import csv
+import json
+import math
+import os
+import re
+import shutil
+import subprocess
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+MAX_ROWS = 10000
+
+
+def dosi_cmd():
+    shim = os.path.join(HERE, "dosi")
+    return [shim] if os.access(shim, os.X_OK) else [shutil.which("dosi") or "dosi"]
+
+
+def run(args):
+    proc = subprocess.run(dosi_cmd() + args, capture_output=True, text=True)
+    if proc.returncode != 0:
+        err = proc.stderr.strip() or proc.stdout.strip()
+        try:
+            err = json.loads(err)
+        except ValueError:
+            pass
+        return None, err
+    try:
+        return json.loads(proc.stdout), None
+    except ValueError:
+        return None, proc.stdout.strip()[:2000]
+
+
+NULLS = {"NULL", "\\N", ""}
+
+
+def load_reference(path):
+    """The reference rows and their column names, from the file the client
+    wrote: (rows, columns), or (None, error)."""
+    ext = os.path.splitext(path)[1].lower()
+    if ext == ".sql":
+        return None, ("--reference takes the rows, not the query: run it with the "
+                      "user's database client into dosi/build/ref.tsv (or .csv) first")
+    try:
+        with open(path, newline="", encoding="utf-8-sig") as f:
+            text = f.read()
+    except OSError as e:
+        return None, str(e)
+    if ext == ".json":
+        try:
+            data = json.loads(text)
+        except ValueError as e:
+            return None, f"not JSON: {e}"
+        rows = data.get("rows", []) if isinstance(data, dict) else data
+        if not isinstance(rows, list) or any(not isinstance(r, dict) for r in rows):
+            return None, "a .json reference is an array of objects (one per row)"
+        columns = data.get("columns") if isinstance(data, dict) else None
+        return rows, columns or (list(rows[0]) if rows else [])
+    first = text.split("\n", 1)[0]
+    delim = "\t" if ext == ".tsv" or (ext != ".csv" and "\t" in first) else ","
+    table = [r for r in csv.reader(text.splitlines(), delimiter=delim) if r]
+    if not table:
+        return [], []
+    columns = [c.strip() for c in table[0]]
+    rows = [{c: (None if v.strip() in NULLS else v) for c, v in zip(columns, r)} for r in table[1:]]
+    return rows, columns
+
+
+DATE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})(?:[ T]00:00:00(?:\.0+)?)?$")
+MONTH = re.compile(r"^(\d{4})-(\d{2})$")
+
+
+def norm_key(v):
+    if v is None:
+        return "NULL"
+    if isinstance(v, bool):
+        return str(v).lower()
+    if isinstance(v, float) and v.is_integer():
+        return str(int(v))
+    s = str(v).strip()
+    m = DATE.match(s)
+    if m:
+        return "-".join(m.groups())
+    m = MONTH.match(s)
+    if m:
+        return f"{m.group(1)}-{m.group(2)}-01"
+    if re.fullmatch(r"-?\d+\.0+", s):
+        return s.split(".")[0]
+    return s
+
+
+def num(v):
+    if v is None:
+        return None
+    if isinstance(v, (int, float)):
+        return float(v)
+    try:
+        return float(str(v).strip())
+    except ValueError:
+        return str(v)
+
+
+def same(a, b, tol):
+    if a is None or b is None:
+        return a is None and b is None
+    if isinstance(a, str) or isinstance(b, str):
+        return str(a) == str(b)
+    if math.isnan(a) or math.isnan(b):
+        return math.isnan(a) and math.isnan(b)
+    return abs(a - b) <= max(tol, tol * max(abs(a), abs(b)))
+
+
+def result_column(name):
+    """The column dosi prints for a group-by item: `customers.region` -> `region`,
+    `orders.order_date:month` -> `order_date__month`, `metric_time:month` ->
+    `metric_time__month`."""
+    field, _, grain = name.partition(":")
+    field = field.rsplit(".", 1)[-1]
+    return f"{field}__{grain}" if grain else field
+
+
+def pairs(items, flag):
+    out = []
+    for item in items:
+        if "=" not in item:
+            sys.exit(f"{flag} wants <name>=<reference column>, got {item!r}")
+        left, right = item.split("=", 1)
+        out.append((left.strip(), right.strip()))
+    return out
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    ap.add_argument("--reference", required=True, help="file with the reference rows (.tsv, .csv, .json)")
+    ap.add_argument("--key", action="append", default=[], required=True)
+    ap.add_argument("--check", action="append", default=[])
+    ap.add_argument("--same-names", action="store_true")
+    ap.add_argument("--group-by", default="")
+    ap.add_argument("--where")
+    ap.add_argument("--start-time")
+    ap.add_argument("--end-time")
+    ap.add_argument("--param", action="append", default=[])
+    ap.add_argument("--connection")
+    ap.add_argument("--tolerance", type=float, default=1e-6)
+    ap.add_argument("--examples", type=int, default=5)
+    ap.add_argument("--strict", action="store_true", help="exit 1 when a check failed (CI)")
+    a = ap.parse_args()
+
+    keys = [(result_column(k), c) for k, c in pairs(a.key, "--key")]
+    checks = pairs(a.check, "--check")
+    if not checks and not a.same_names:
+        sys.exit("pass --check <metric>=<column> or --same-names")
+    conn = ["--connection", a.connection] if a.connection else []
+
+    ref_rows, ref_cols = load_reference(a.reference)
+    if ref_rows is None:
+        print(json.dumps({"error": "could not read the reference rows", "detail": ref_cols}, ensure_ascii=False))
+        return 2
+    if len(ref_rows) > MAX_ROWS:
+        print(json.dumps({"error": f"the reference has more than {MAX_ROWS} rows; narrow its query"}))
+        return 2
+    if a.same_names:
+        listed, err = run(["list", "metrics", "--format", "json"])
+        if err is not None:
+            print(json.dumps({"error": "could not list metrics", "detail": err}, ensure_ascii=False))
+            return 2
+        names = {m["name"] for m in listed}
+        key_cols = {c for _, c in keys}
+        have = {m for m, _ in checks}
+        for col in ref_cols:
+            if col in names and col not in key_cols and col not in have:
+                checks.append((col, col))
+    missing_cols = [c for _, c in keys + checks if c not in ref_cols]
+    if missing_cols:
+        print(json.dumps({"error": "reference rows lack columns", "columns": missing_cols,
+                          "has": ref_cols}, ensure_ascii=False))
+        return 2
+
+    results, failed = [], False
+    for metric, ref_col in checks:
+        q = ["query", "--format", "json", "--execute", "--metrics", metric, "--limit", str(MAX_ROWS)] + conn
+        if a.group_by:
+            q += ["--group-by", a.group_by]
+        for flag, val in (("--where", a.where), ("--start-time", a.start_time), ("--end-time", a.end_time)):
+            if val:
+                q += [flag, val]
+        for p in a.param:
+            q += ["--param", p]
+        got, err = run(q)
+        if err is not None:
+            results.append({"metric": metric, "status": "error", "detail": err})
+            failed = True
+            continue
+        rows = got.get("rows", [])
+        if rows and any(k not in rows[0] for k, _ in keys):
+            results.append({"metric": metric, "status": "error",
+                            "detail": "metric result lacks key columns",
+                            "key_columns": [k for k, _ in keys], "has": list(rows[0].keys())})
+            failed = True
+            continue
+        if rows and metric not in rows[0]:
+            results.append({"metric": metric, "status": "error",
+                            "detail": "metric column not in result", "has": list(rows[0].keys())})
+            failed = True
+            continue
+        mine = {tuple(norm_key(r[k]) for k, _ in keys): num(r.get(metric)) for r in rows}
+        theirs = {tuple(norm_key(r[c]) for _, c in keys): num(r.get(ref_col)) for r in ref_rows}
+        only_ref = [k for k in theirs if k not in mine]
+        only_metric = [k for k in mine if k not in theirs]
+        diff = [k for k in theirs if k in mine and not same(mine[k], theirs[k], a.tolerance)]
+        ok = not (only_ref or only_metric or diff)
+        failed |= not ok
+        entry = {
+            "metric": metric,
+            "reference_column": ref_col,
+            "status": "passed" if ok else "failed",
+            "cells": len(theirs),
+            "mismatched": len(diff),
+            "missing_in_metric": len(only_ref),
+            "missing_in_reference": len(only_metric),
+        }
+        if not ok:
+            names = [k for k, _ in keys]
+            ex = []
+            for k in diff[: a.examples]:
+                ex.append({"key": dict(zip(names, k)), "metric": mine[k], "reference": theirs[k]})
+            for k in only_ref[: max(0, a.examples - len(ex))]:
+                ex.append({"key": dict(zip(names, k)), "metric": "<no row>", "reference": theirs[k]})
+            for k in only_metric[: max(0, a.examples - len(ex))]:
+                ex.append({"key": dict(zip(names, k)), "metric": mine[k], "reference": "<no row>"})
+            entry["examples"] = ex
+        results.append(entry)
+
+    passed = sum(1 for r in results if r["status"] == "passed")
+    print(json.dumps({"passed": passed, "failed": len(results) - passed, "checks": results},
+                     ensure_ascii=False, default=str))
+    return 1 if failed and a.strict else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

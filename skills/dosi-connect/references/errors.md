@@ -1,25 +1,28 @@
 # Error → what the user sees
 
 Every dosi error under `--format json` carries `code`, `message`, and often
-`hint`, `candidates`, `suggested_retry`. Say it in three lines; never paste the
-raw JSON or a stack trace; give exactly **one** next step.
+`hint`, `candidates`, `suggested_retry`. Say it in three lines, in the
+user's language; never paste the raw JSON or a stack trace; give exactly
+one next step.
 
 ```
 ✗ <what happened, in the user's terms>
-  原因：<one-sentence cause>
-  下一步：<one action>
+  Why: <one-sentence cause>
+  Next: <one action>
 ```
 
-| code | 发生了什么 | 下一步 | auto-recover? |
+| code | What happened | Next step | Fix it yourself? |
 |---|---|---|---|
-| `dosi_installing` | — (say nothing) | wait ~5 s, rerun the same command (up to 6 times) | yes |
-| `install_failed` | dosi 没装上 | the `hint` command (China: `DOSI_SOURCE=oss`) | no |
-| `missing_env` | 连不上 `<name>` | `! export <VAR>=...`（不要把值贴到对话里） | no |
-| `auth_failed` | `<name>` 认证失败 | 检查 `<VAR>` 的值是否正确，重新 export 后再试 | no |
-| `unsupported_auth` | `<profile>` 用的认证方式暂不支持 | 改用 key-pair 或 密码 + 环境变量（给出模板） | no |
-| `network_blocked` | 到 `<host>` 的网络不通 | 检查 VPN / 代理；或在 agent 中放开网络权限 | no |
-| `unsupported_dialect` | dosi 暂不支持 `<warehouse>` | 列出已支持的数仓（`dosi info --format json` 的 `dialects`） | no |
-| `connection_not_found` | 没有叫 `<name>` 的连接 | 从 `dosi connection list --format json` 里选，或重新 `migrate conf` | partly |
-| validate `compile_errors` / `issues` | — (say nothing) | fix the model yourself; tell the user only after 3 failed fixes | yes |
-| `detail_fanout`, `ambiguous_join_path` | — (say nothing) | rerun with `suggested_retry`; ask only if both readings are plausible business meanings | yes |
-| `unknown_metric`, `unknown_field` | 没有 `<x>` | 「最接近的有：<top 3 candidates>」— pick one if the intent is clear, else ask | partly |
+| `dosi_installing` | (say nothing) | wait ~5 s and rerun the same command, up to 6 times | yes |
+| `install_failed` | dosi could not be installed | the `hint` command (in mainland China: `DOSI_SOURCE=oss`) | no |
+| `missing_env` | the password for `<name>` is not filled in | replace `${<VAR>}` in dosi-connections.yaml, or put `<VAR>=…` in ~/.config/dosi/secrets.env (never in the chat) | no |
+| `auth_failed` | `<name>` refused the login | the user checks the user name and password | no |
+| `unsupported_auth` | `<profile>` uses a login dosi does not support yet | key-pair or password (give the template) | no |
+| `network_blocked` | `<host>` cannot be reached from here | VPN or proxy; or the agent's network permission | no |
+| `connection_failed` | cannot connect to `<host>` | check host and port | no |
+| `sql_rejected` | the warehouse rejected the query | fix it from the message (table, column, dialect) | yes |
+| `unsupported_dialect` | dosi does not support `<warehouse>` yet | the supported ones: `dialects` in `dosi info --format json` | no |
+| `connection_not_found` | there is no connection `<name>` | pick one from `list_connections` (`dosi connection list --format json`), or rerun `migrate conf` | partly |
+| validate `compile_errors` / `issues` | (say nothing) | fix the model; tell the user only after 3 failed fixes | yes |
+| `detail_fanout`, `ambiguous_join_path` | (say nothing) | rerun with `suggested_retry`; ask only if the readings differ in business meaning | yes |
+| `unknown_metric`, `unknown_field` | there is no `<x>` | the closest `candidates`: use one if the intent is clear, else ask | partly |

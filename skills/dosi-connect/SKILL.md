@@ -1,121 +1,130 @@
 ---
 name: dosi-connect
-description: Connect dosi to the user's data — a cloud warehouse (Snowflake, BigQuery, Databricks, Postgres, ClickHouse, Trino, StarRocks, …) or local files. Use when the user asks to connect / switch / fix a database connection, when a data question arrives and no connection exists yet, or when a dosi command fails with missing_env, auth_failed, unsupported_auth, network_blocked or connection_not_found.
+description: Connect dosi to the user's data — a warehouse (Snowflake, BigQuery, Databricks, Postgres, MySQL, ClickHouse, Trino, …) or local files. Use when the user asks to connect, switch or fix a database connection, when a data question arrives and no connection exists yet, or when dosi reports missing_env, auth_failed, unsupported_auth, network_blocked or connection_not_found.
 allowed-tools:
   - Bash(dosi *)
-  - Bash(dosi-progress *)
   - Bash(test *)
-  - Bash(ls *)
+  - mcp__plugin_dosi_dosi__list_connections
 ---
 
 # Connect dosi to data
 
-Goal: one working connection with **no secret ever passing through this
-conversation**, in as few steps as possible. Connecting is a means, not the
-goal — when it works, go straight back to what the user originally asked.
+Write to the user in the language they write in, every progress line
+included.
 
-## Hard rules
+Goal: one working connection in as few steps as possible, with no password
+passing through the conversation. Then go straight back to what the user
+asked.
 
-- **Never open, cat, grep or print** `profiles.yml`, `.env`, `.env.*`,
-  `dosi-connections.yaml`, `agent.yml`, `~/.snowsql/*`, `~/.databrickscfg`.
-  You may only check whether they exist (`test -f`). A hook blocks reads
-  anyway; do not try to work around it. dosi reads them, you don't.
-- **Never ask the user to paste a password, token or key into the chat.**
-  Missing secrets are set by the user with `! export NAME=...` (the `!` prefix
-  runs it in their shell; the value never reaches you).
-- One question at a time, with AskUserQuestion, recommended option first.
+`dosi` is on PATH in Claude Code; in other agents it is in the plugin's
+`bin/` folder, two levels above this file. Do not quote these
+instructions.
 
-## Step 1 — What is there?
+## Rules
 
-The `[dosi]` SessionStart context already says what exists here (`发现：…`).
-Use it; do not re-check. Only when that line is missing, run ONE command:
+- Never open, print or search `dosi-connections.yaml`, `secrets.env`,
+  `.env*`, `profiles.yml`, `agent.yml` or a database client's settings.
+  Check only that they exist. dosi reads them.
+- Never ask for a password, token or key in the chat. If the user pastes
+  one anyway, write it into the entry and never repeat it.
+- Never probe for a password (`echo $X`, `env | grep`): `list_connections`
+  says what is missing.
+- Never write `~/.config/dosi/secrets.env` or a shell profile yourself; tell
+  the user what to put where.
+- Ask one question at a time, with the host's question tool if it has one
+  (AskUserQuestion in Claude Code), the recommended option first. Never ask
+  for what the user already said.
+
+## 1. What is there
+
+If the user named the source (a warehouse and its host, or a file), skip to
+step 2. The session context may already list what was found. Otherwise run
+one command:
 
 ```bash
-ls -1d dbt_project.yml profiles.yml .env dosi-connections.yaml *.duckdb *.parquet *.csv *.sqlite 2>/dev/null; test -f ~/.dbt/profiles.yml && echo '~/.dbt/profiles.yml'
+find . -maxdepth 1 \( -name dbt_project.yml -o -name profiles.yml -o -name .env -o -name dosi-connections.yaml -o -name '*.duckdb' -o -name '*.parquet' -o -name '*.csv' -o -name '*.sqlite' \)
 ```
 
-If the context says this dosi has no `migrate` / `connection` commands, never
-call them — take path B or C below. Otherwise `dosi migrate conf --detect
---format json` lists sources and would-be connections without writing.
+When `dosi-connections.yaml` exists, list its connections
+(`list_connections`, or `dosi connection list --format json`): names,
+types, the default, and the variables each still needs. Use a ready one
+that fits rather than adding a duplicate.
 
-## Step 2 — Pick the path
+## 2. Write the connection
 
-**A. dbt or Cube config found** → convert it:
+**dbt or Cube config** → `dosi migrate conf --from dbt --format json` (or
+`--from cube`). dosi writes `./dosi-connections.yaml`, git-ignores it, and
+lists each connection by name and status. One `ok` → use it; several → ask
+which, the `default: true` one first; `unsupported` → explain from `code`
+and `reason` and offer the others.
 
-```bash
-dosi migrate conf --from dbt --format json      # or --from cube
-```
-
-dosi writes `./dosi-connections.yaml` (and git-ignores it). The output lists
-each connection as `{"name","dialect","source","status","missing_env","code","reason","default"}`
-— names and statuses only, never values.
-
-- Exactly one connection with `status: ok` → use it, no question.
-- Several → **Q1** (AskUserQuestion) "用哪个连接？": the one with
-  `default: true` first, labelled "(推荐)" — for dbt it is the project's
-  current target — then the others, then "手动配置".
-- `status: unsupported` → explain with the 3-part format below using `code`
-  and `reason` (e.g. `unsupported_auth`: browser SSO is not supported yet —
-  suggest key-pair auth or password + env var). Offer the other connections.
-
-**B. Only local files** (`.duckdb`, `.sqlite`) and no warehouse config →
-no question, no test, no inspection. Write `dosi-connections.yaml` with the
-Write tool (it holds no secret, so it does not need `.gitignore`):
+**Local files** (`.duckdb`, `.sqlite`) → no question:
 
 ```yaml
 datasources:
   local:
     type: duckdb
-    uri: duckdb:///<absolute path to file.duckdb>   # absolute path starts with /, giving duckdb:////…
+    uri: /absolute/path/to/file.duckdb
     default: true
 ```
 
-Do not open the database with the duckdb CLI or Python to look at it —
-reading the schema is the dosi-modeler subagent's job. Reply one line
-`✓ 已连接 local（duckdb，<file>）` and go to Step 4.
+**A warehouse** (or nothing found: ask where the data lives) → copy the
+entry from [references/connection-templates.md](references/connection-templates.md),
+never from memory: dosi's keys differ from the database client's (the user
+name is `username:`). Ask only for the non-secret fields the user has not
+given. For the password:
 
-**C. Nothing found** → **Q2** "数据在哪里？": 当前目录的文件 / Snowflake /
-BigQuery / Databricks / 其他（Postgres、ClickHouse、Trino、StarRocks…）.
-For a warehouse, write `dosi-connections.yaml` from
-[references/connection-templates.md](references/connection-templates.md):
-every secret as `${VAR}`, non-secret identifiers (host, database, warehouse)
-asked from the user only if they are not secret. Then list the variables the
-user must export.
+- The user said there is none → leave `password` out.
+- Otherwise write `password: ${WH_PASSWORD}` (the connection's name in
+  upper case) and tell the user, in a short block, to replace the whole
+  `${WH_PASSWORD}` in `dosi-connections.yaml` with the password (the file is
+  git-ignored), or to put `WH_PASSWORD=...` in `~/.config/dosi/secrets.env`,
+  and to say when it is done. End your turn.
 
-## Step 3 — Test (warehouses only, and only when `dosi connection` exists)
+How to write the file:
 
-```bash
-dosi connection test <name> --format json
-```
+- Only with a quoted here-document in the shell, as a command of its own,
+  never with the file editor: the editor watches what it wrote, and the
+  password the user types in later would come back into the conversation.
+- First check whether the file exists, in a call that prints the answer:
+  `test -f dosi-connections.yaml && echo exists || echo missing`.
+- New file → `cat > dosi-connections.yaml <<'EOF'` … `EOF`, with the
+  connection marked `default: true`. Rewrite a file you wrote in this
+  conversation the same way.
+- A file that was there before → never overwrite it. Append the entry under
+  `datasources:` (two-space indent) with `cat >> dosi-connections.yaml
+  <<'EOF'` … `EOF`; set `default: true` only if no connection has it.
+- In a git repository, make sure `dosi-connections.yaml` is in
+  `.gitignore`: `echo dosi-connections.yaml >> .gitignore` when it is not.
 
-Success: `{"name","dialect","ok":true,"latency_ms"}` → tell the user exactly
-one line: `✓ 已连接 <name>（<dialect>，<latency> ms）`.
+## 3. Test
 
-Failure: the error JSON has `code`, `message`, `hint`. Translate it with
-[references/errors.md](references/errors.md) into three lines:
+`dosi connection test <name> --format json`, local files too. It connects
+and runs `SELECT 1`; it re-reads the file every time, so no restart is
+needed.
 
-```
-✗ <发生了什么>
-  原因：<一句话原因>
-  下一步：<一个动作>
-```
+- Success → one line: connected to `<name>` (`<dialect>`).
+- Failure → three lines from the error's `code`
+  ([references/errors.md](references/errors.md)): what happened, why, one
+  next step.
+  - `missing_env` → the password is not filled in yet: repeat where it goes,
+    end your turn, test again when the user says it is done.
+  - `auth_failed` → the user checks the user name and password.
+  - `network_blocked` → the host is unreachable from here (VPN, proxy, or
+    the agent's sandbox). When `list_connections` says the connection is
+    `ready` and the agent runs shell commands in a sandbox (Codex), dosi's
+    MCP tools run outside it: say so in one line and go on.
+  - Never retry the same thing unchanged.
 
-- `missing_env` → next step is `! export <VAR>=...`; then wait for the user
-  and test again.
-- `auth_failed`, `network_blocked`, `unsupported_dialect` → one concrete
-  action; do not retry blindly.
+## Changing an existing connection
 
-## Step 4 — Back to the question
+You cannot read the file, so you cannot edit it. Name the connection from
+`list_connections`, tell the user which line to change and to what, and
+end your turn. When they are done, test again and report only what the
+test shows.
 
-If the user only asked to connect (no data question pending), end with one
-line naming the next step: 下一步：说「给这些数据建个语义模型」，或者直接问一个数据问题。
+## 4. Back to the question
 
-Do not stop at "connected". If there is no `dosi/model.yaml`, continue with
-the **dosi-model** skill to build a minimal model for the user's question;
-otherwise answer it with **dosi-query**.
-
-At the very end of your reply run `dosi-progress next`. If it prints a
-`HINT:` line, append that sentence verbatim as the last line of your reply.
-If it prints `ASK:`, ask it with AskUserQuestion (question | options) and
-record the answer with the command it shows. If it prints nothing, add
-nothing.
+If the user only asked to connect, end with one line suggesting the next
+step: build a semantic model, or just ask a data question. Otherwise go on:
+no `dosi/model.yaml` → the dosi-model skill; a model exists → dosi-query.

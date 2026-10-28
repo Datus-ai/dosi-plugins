@@ -1,0 +1,4 @@
+# DeepSeek Harness bundle layer: mount the dosi plugin (dsh/index.mjs).
+- insert:
+    - id: dosi
+      name: dsh-plugin-dosi

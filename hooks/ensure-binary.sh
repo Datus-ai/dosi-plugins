@@ -1,53 +1,67 @@
 #!/bin/sh
-# Install the dosi version this plugin pins into the plugin data dir, once.
-# Runs detached from session-start (and from the shim as a fallback), so the
-# session never waits on a download. Markers in the version dir:
-#   .lock    an install is running        .ok      installed and verified
-#   .failed  last attempt's log tail (the shim reports it as install_failed)
-# Network is used here and nowhere else at runtime (RFC D3).
+# Install the newest dosi release into the plugin data dir and point
+# bin/current at it. Each release lands in bin/<version>/ (with .ok once
+# installed and verified); markers in bin/:
+#   .lock    an install is running
+#   .failed  last attempt's reason (the shim reports it as install_failed)
+#
+#   ensure-binary.sh            install when nothing usable is installed: no
+#                               current release, or one older than the
+#                               plugin's minimum (session start, the shim)
+#   ensure-binary.sh --upgrade  install the newest release even when the
+#                               current one is usable (dosi-upgrade); prints
+#                               the installed version
+#
+# Runs detached from session-start and the shim, so a session never waits on
+# a download. Network is used here and in `dosi-upgrade --check`, nowhere
+# else at runtime (RFC D3). DOSI_INSTALLER replaces hooks/install.sh (tests).
 DOSI_LIB_ROOT=${DOSI_LIB_ROOT:-$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)}
 . "$DOSI_LIB_ROOT/hooks/lib.sh"
 
-ver=$(dosi_plugin_version)
-dir=$(dosi_bin_dir)
-mkdir -p "$dir"
+[ -n "${DOSI_DEV_BIN_DIR:-}" ] && exit 0
+upgrade=0
+[ "${1:-}" = --upgrade ] && upgrade=1
+[ $upgrade -eq 0 ] && dosi_bin_ready && exit 0
 
-[ -f "$dir/.ok" ] && [ -x "$dir/dosi" ] && exit 0
-
-# Reuse a matching dosi already on PATH (outside this plugin) instead of
-# downloading a second copy.
-old_ifs=$IFS; IFS=:
-for p in $PATH; do
-  case "$p" in "$DOSI_LIB_ROOT"/*) continue ;; esac
-  if [ -x "$p/dosi" ] && [ "$("$p/dosi" --version 2>/dev/null | awk '{print $2}')" = "$ver" ]; then
-    IFS=$old_ifs
-    ln -sf "$p/dosi" "$dir/dosi" && : > "$dir/.ok" && exit 0
-  fi
-done
-IFS=$old_ifs
+min=$(dosi_min_version)
+bin="$(dosi_data)/bin"
+mkdir -p "$bin"
 
 # One installer at a time; a lock older than 10 minutes is stale.
-if [ -f "$dir/.lock" ] && [ -z "$(find "$dir/.lock" -mmin +10 2>/dev/null)" ]; then
+if [ -f "$bin/.lock" ] && [ -z "$(find "$bin/.lock" -mmin +10 2>/dev/null)" ]; then
+  [ $upgrade -eq 1 ] && { echo "another dosi install is running; try again in a minute" >&2; exit 4; }
   exit 0
 fi
-: > "$dir/.lock"
-rm -f "$dir/.failed"
+: > "$bin/.lock"
+rm -f "$bin/.failed"
+stage="$bin/.stage-$$"
+trap 'rm -f "$bin/.lock"; rm -rf "$stage"' EXIT
 
 # Mainland China: GitHub is often unreachable, the OSS mirror is not.
-source_=${DOSI_SOURCE:-}
-if [ -z "$source_" ]; then
-  case "${TZ:-}$(cat /etc/timezone 2>/dev/null)$(readlink /etc/localtime 2>/dev/null)" in
-    *Shanghai*|*Chongqing*|*Harbin*|*Urumqi*) source_=oss ;;
-    *) source_=github ;;
-  esac
+source_=$(dosi_source)
+
+# No DOSI_VERSION: the installer resolves the newest release itself.
+log="$bin/install.log"
+mkdir -p "$stage"
+if DOSI_INSTALL_DIR="$stage" DOSI_SOURCE="$source_" XDG_DATA_HOME="$(dosi_data)/share" \
+   sh "${DOSI_INSTALLER:-$DOSI_LIB_ROOT/hooks/install.sh}" >"$log" 2>&1 \
+   && ver=$("$stage/dosi" --version 2>/dev/null | awk '{print $2}') && [ -n "$ver" ]; then
+  :
+else
+  tail -n 20 "$log" > "$bin/.failed" 2>/dev/null || echo "installer failed" > "$bin/.failed"
+  exit 3
 fi
 
-log="$dir/install.log"
-if DOSI_VERSION="$ver" DOSI_INSTALL_DIR="$dir" DOSI_SOURCE="$source_" \
-   XDG_DATA_HOME="$(dosi_data)/share" sh "$DOSI_LIB_ROOT/hooks/install.sh" >"$log" 2>&1 \
-   && "$dir/dosi" --version >/dev/null 2>&1; then
-  : > "$dir/.ok"
-else
-  tail -n 20 "$log" > "$dir/.failed" 2>/dev/null || echo "installer failed" > "$dir/.failed"
+if ! dosi_version_ge "$ver" "$min"; then
+  echo "this plugin needs dosi $min or newer, and the newest release is $ver" > "$bin/.failed"
+  exit 3
 fi
-rm -f "$dir/.lock"
+
+# A release already installed is kept as it is: a running dosi-server may be
+# using its files.
+if [ ! -f "$bin/$ver/.ok" ]; then
+  rm -rf "${bin:?}/$ver"
+  mv "$stage" "$bin/$ver" && : > "$bin/$ver/.ok"
+fi
+ln -sfn "$ver" "$bin/current"
+printf '%s\n' "$ver"

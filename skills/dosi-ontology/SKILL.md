@@ -1,70 +1,76 @@
 ---
 name: dosi-ontology
-description: Build or use an Apache Ossie ontology (dosi/ontology.yaml) — business concepts such as Customer, Order, Store, their relationships and roles — and ask questions by concept path. Use only when the user explicitly asks about an ontology / business concepts / entity relationships, or has just accepted the ontology suggestion from dosi-progress.
+description: Build or use an Apache Ossie ontology (dosi/ontology.yaml) — business concepts such as Customer, Order, Product, their relationships and roles — and ask questions by concept path. Use only when the user asks about an ontology, business concepts or entity relationships, or has just accepted the plugin's offer to build one.
 allowed-tools:
   - Bash(dosi *)
-  - Bash(dosi-progress *)
+  - mcp__plugin_dosi_dosi__describe
+  - mcp__plugin_dosi_dosi__paths
+  - mcp__plugin_dosi_dosi__select
+  - mcp__plugin_dosi_dosi__run_query
+  - mcp__plugin_dosi_dosi__list_datasets
+  - mcp__plugin_dosi_dosi__validate_model
 ---
 
 # Ontology: questions by business concept
 
+Write to the user in the language they write in, every progress line
+included.
+
 An ontology names the business concepts behind the model (Customer, Order,
-Store), how they relate ("an Order is placed by a Customer", "shipped to a
-Store"), and which join each relationship means. It makes entity questions
-precise when two tables are connected in more than one way.
+Product), how they relate ("an Order is placed by a Customer"), and which
+join each relationship means. It makes entity questions precise when two
+tables are connected in more than one way.
 
-## Explain first (3 sentences, using the user's own question)
+`dosi` is on PATH in Claude Code; in other agents it is in the plugin's
+`bin/` folder, two levels above this file. Use business terms with the
+user; concept paths are for tool calls.
 
-Before building anything, say what it buys them with an example from this
-conversation, e.g.: 「你刚才问的"退货多的客户常去哪些门店"要经过订单→客户、
-订单→门店两条关系。ontology 把这些关系起了业务名字，以后直接问
-"Customer.frequent_store" 这类问题就不会走错路径。建一个大约需要几分钟，
-过程中我最多问你 3 个问题。」
+## Before building
+
+Unless the user just asked for it, say in two or three sentences what it
+buys them, using one of their own questions (e.g. "which region's customers
+buy the most electronics" goes from orders to customers and to products;
+the ontology names those links, so such questions always join the same
+way). It adds two files and changes no data or metrics.
 
 ## Build
 
-1. Delegate to the **dosi-ontologist** subagent (Agent tool,
-   `subagent_type: "dosi:dosi-ontologist"`) with: the path `dosi/model.yaml`,
-   the entity questions the user has asked so far, and their words for the
-   concepts.
-2. It returns the path `dosi/ontology.yaml`, a summary (concepts,
-   relationships), and at most 3 ambiguities with candidates. Ask each with
-   AskUserQuestion (**Q7**), recommended first, and apply the answers.
-3. Check (the hook also validates every save):
+Do it in this conversation, one line before each step. (The
+dosi-ontologist subagent runs the same steps in the background; use it only
+when the user asks for that.)
 
-   ```bash
-   dosi --ontology dosi/ontology.yaml validate --format json
-   dosi describe
-   ```
-
-4. One line to the user:
-   `◆ ontology 已就绪：Customer、Order、Product、Store（4 个概念，5 条关系）`.
+1. Read the model: `list_datasets` and the relationships in
+   `dosi/model.yaml`. Read the references with the file tools (Read, Grep),
+   not the shell. Start from the complete example in
+   [references/](references/) (`example-orders.ontology.yaml`,
+   `example-orders.mapping.yaml`, `model-orders.yaml`) and the rules in
+   [references/ontology-authoring.md](references/ontology-authoring.md).
+2. Write `dosi/ontology.yaml` (concepts and named relationships in the
+   user's vocabulary; parallel links each get their own name) and
+   `dosi/mapping.yaml` (which dataset key or column each concept and link
+   is). Never edit the model for it.
+3. Check: `dosi validate --format json` (Claude Code also validates every
+   save), then `describe`, `describe` for each entity, `paths` between the
+   pairs the user asked about, and one of the user's questions as a
+   `select` on concept paths.
+4. Ask at most 3 questions where the evidence allows several readings
+   (multiplicity, names of parallel links, whether a notion like "key
+   account" is a concept or a filter), the recommended reading first.
+5. One line to the user: the ontology is ready, with its concepts and
+   number of relationships.
 
 ## Use
 
-With `DOSI_ONTOLOGY` set (the session sets it once `dosi/ontology.yaml`
-exists; in this session pass `--ontology dosi/ontology.yaml`):
+dosi loads `dosi/ontology.yaml` and `dosi/mapping.yaml` by itself. Concept
+paths work wherever fields do (CLI in brackets):
 
-```bash
-dosi describe                         # concept catalog
-dosi describe Customer                # one concept in full; every name it prints is pasteable
-dosi paths --from Order --to Store    # every named path, with roles and hop counts
-dosi select --format json --execute --from Customer \
-  --fields Customer.id,Customer.name,Customer.places.shipped_to.name \
-  --where "Customer.places.status = 'returned'"
-dosi query --format json --execute --metrics revenue --group-by Order.placed_by.region
-```
+- `describe`: the concept catalog; with `name`, one concept in full
+  (`dosi describe [Customer]`);
+- `paths` with `from` / `to`: every named path between two concepts
+  (`dosi paths --from Order --to Product`);
+- `select` with `from: "Order"` and fields such as
+  `Order.placed_by.region`, `Order.purchases.category`;
+- `run_query` grouped by a concept path such as `Order.placed_by.region`.
 
-Concept paths work in `--from`, `--fields`, `--group-by`, `--where`,
-`--time-dimension` and `--metrics` (derived metrics: `Concept.metric`).
-`--order` takes output column names, not concept paths. Refusals name the
-repair in `suggested_retry` — use it.
-
-The concept graph: the **dosi-view** skill (`dosi lineage view`).
-
-Syntax reference: [references/ontology-authoring.md](references/ontology-authoring.md).
-
-## Close
-
-At the end run `dosi-progress next`: append a `HINT:` line verbatim; ask an
-`ASK:` line with AskUserQuestion and record the answer; add nothing otherwise.
+`order_by` takes output column names, not concept paths. Refusals name the
+repair in `suggested_retry`. The concept graph: the dosi-view skill.

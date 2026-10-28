@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "dosi": {
+      "command": "${CLAUDE_PLUGIN_ROOT}/bin/dosi-mcp"
+    }
+  }
+}

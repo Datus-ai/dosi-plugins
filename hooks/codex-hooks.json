@@ -1,0 +1,29 @@
+{
+  "description": "dosi for Codex: session context, the config-read guard, validation after model edits (Codex reads this file through .codex-plugin/plugin.json; hooks.json carries Claude Code's mod, which Codex refuses)",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          { "type": "command", "command": "sh \"${PLUGIN_ROOT}/hooks/session-start.sh\"", "timeout": 20 }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash|apply_patch",
+        "hooks": [
+          { "type": "command", "command": "sh \"${PLUGIN_ROOT}/hooks/guard-config-read.sh\"", "timeout": 10 }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash|apply_patch",
+        "hooks": [
+          { "type": "command", "command": "sh \"${PLUGIN_ROOT}/hooks/validate-on-edit.sh\"", "timeout": 60 }
+        ]
+      }
+    ]
+  }
+}

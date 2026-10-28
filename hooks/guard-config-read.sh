@@ -1,7 +1,8 @@
 #!/bin/sh
 # PreToolUse (Read | Grep | Bash): connection configs are dosi's to read,
 # never the agent's (RFC D5, §6.7). Blocks opening dbt profiles, .env files,
-# dosi-connections.yaml, Datus agent.yml and warehouse CLI configs. Existence
+# dosi-connections.yaml, the secrets.env the user may keep, Datus agent.yml
+# and warehouse CLI configs. Existence
 # checks (ls, test, [ -f ]) and dosi's own commands stay allowed.
 DOSI_LIB_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 . "$DOSI_LIB_ROOT/hooks/lib.sh"
@@ -9,14 +10,14 @@ DOSI_LIB_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 payload=$(cat)
 tool=$(printf '%s' "$payload" | json_get tool_name)
 
-guarded='(profiles\.yml|dosi-connections\.ya?ml|\.snowsql/|\.databrickscfg|\.datus/conf/agent\.yml|conf/agent\.yml|(^|[/[:space:]"'"'"'=])\.env(\.[A-Za-z0-9_-]+)?($|[[:space:]"'"'"';|&)]))'
+guarded='(profiles\.yml|dosi-connections\.ya?ml|secrets\.env|\.snowsql/|\.databrickscfg|\.my\.cnf|\.mylogin\.cnf|\.pgpass|\.pg_service\.conf|\.datus/conf/agent\.yml|conf/agent\.yml|(^|[/[:space:]"'"'"'=])\.env(\.[A-Za-z0-9_-]+)?($|[[:space:]"'"'"';|&)]))'
 
 deny() {
   # printf with %s only: the blocked command must never be expanded or run.
-  printf '%s\n' "已拦截：这条操作会打开数仓连接配置（可能含密钥），不要这样做：" "  $1" \
-    "连接由 dosi 处理：dosi migrate conf --detect --format json 查看有哪些来源；" \
-    "dosi migrate conf --from dbt|cube --format json 生成 dosi 连接（输出不含任何值）。" \
-    "只需要知道文件在不在时，用 test -f <path>。" >&2
+  printf '%s\n' "Blocked: this opens a connection config or secrets file:" "  $1" \
+    "dosi reads these. dosi connection list --format json shows the connections and the variables they still need (never a value);" \
+    "dosi migrate conf --detect --format json shows what dbt / Cube configs hold." \
+    "To change a connection or password, tell the user which line of which file to edit. To check that a file exists: test -f <path> && echo exists || echo missing." >&2
   exit 2
 }
 
@@ -60,7 +61,34 @@ first_bad_segment() {
     }'
 }
 
+# The user's secrets file is the user's to write, too: no tool writes it.
+secret_write() {
+  printf '%s\n' "Blocked: secrets.env is the user's to write. Tell them what to put in which file:" "  $1" >&2
+  exit 2
+}
+
 case "$tool" in
+  apply_patch)
+    # Codex's file edits: the patch text names each file it touches.
+    patch=$(printf '%s' "$payload" | json_get command)
+    if printf '%s\n' "$patch" | grep -Eq '^\*\*\* (Add|Update|Delete) File: .*secrets\.env'; then
+      secret_write "secrets.env"
+    fi
+    if printf '%s\n' "$patch" | grep -Eq '^\*\*\* (Update|Delete) File: .*('"$guarded"')'; then
+      deny "$(printf '%s\n' "$patch" | grep -E '^\*\*\* (Update|Delete) File: ' | head -n 1)"
+    fi ;;
+  Write|Edit|MultiEdit|NotebookEdit)
+    v=$(printf '%s' "$payload" | json_get file_path)
+    case "$v" in
+      *secrets.env) secret_write "$v" ;;
+      */dosi-connections.yaml|dosi-connections.yaml|*/dosi-connections.yml|dosi-connections.yml)
+        # Claude Code watches a file its editor wrote and sends the user's
+        # later edits back to the model: the password the user types would
+        # land in the conversation. A shell here-document is not watched.
+        printf '%s\n' "Do not write dosi-connections.yaml with the file editor: the editor watches what it wrote, so the password the user types in later would be sent back into the conversation." \
+          "Write it in the shell: a new file with cat > dosi-connections.yaml <<'EOF' ... EOF, an entry for an existing file with cat >> (the same here-document)." >&2
+        exit 2 ;;
+    esac ;;
   Read|Grep|Glob|NotebookRead)
     for key in file_path path pattern glob; do
       v=$(printf '%s' "$payload" | json_get "$key")
@@ -69,6 +97,10 @@ case "$tool" in
     done ;;
   Bash)
     cmd=$(printf '%s' "$payload" | json_get command)
+    if printf '%s' "$cmd" | grep -q 'secrets\.env' &&
+       printf '%s' "$cmd" | grep -Eq '>|\btee\b|\bcp\b|\bmv\b|\btouch\b|sed[[:space:]]+-i|\bchmod\b'; then
+      secret_write "$cmd"
+    fi
     printf '%s\n' "$cmd" | grep -Eq "$guarded" || exit 0
     # Judge each pipeline segment on its own: `dosi migrate conf ...` and
     # `test -f ~/.dbt/profiles.yml` are fine, `cat`/`grep`/`head` are not.

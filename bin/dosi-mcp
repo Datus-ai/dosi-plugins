@@ -1,0 +1,41 @@
+#!/bin/sh
+# dosi-mcp — starts dosi's own MCP server for the agent host (Claude Code's
+# plugin .mcp.json, Codex's plugin MCP declaration, or any agent's MCP
+# config). One process per session; it follows the project's files, so the
+# model can be created and edited and connections changed without a
+# restart (dosi-server live mode, the default with --mcp-stdio).
+#
+#   model        dosi/model.yaml (+ dosi/ontology.yaml, dosi/mapping.yaml),
+#                relative to the project directory; none has to exist yet
+#   connections  discovered like the CLI does (./dosi-connections.yaml first)
+#   secrets      ~/.config/dosi/secrets.env fills ${VAR}s (optional)
+#
+# The server talks JSON-RPC on stdout: nothing else may be printed there.
+self_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+DOSI_LIB_ROOT=$(dirname -- "$self_dir")
+. "$DOSI_LIB_ROOT/hooks/lib.sh"
+
+proj=${CLAUDE_PROJECT_DIR:-${DOSI_PROJECT_DIR:-$PWD}}
+cd "$proj" 2>/dev/null || true
+
+# First run: the binaries may still be downloading. Start (or join) the
+# install and wait for it rather than failing the server at session start.
+if ! dosi_bin_ready; then
+  sh "$DOSI_LIB_ROOT/hooks/ensure-binary.sh" >/dev/null 2>&1 &
+  waited=0
+  while ! dosi_bin_ready && [ $waited -lt 90 ]; do
+    sleep 1
+    waited=$((waited + 1))
+  done
+fi
+server="$(dosi_bin_dir)/dosi-server"
+if ! dosi_bin_ready || [ ! -x "$server" ]; then
+  echo "dosi-mcp: no dosi $(dosi_min_version) or newer is installed yet ($(dosi_bin_dir)); the dosi CLI reports why" >&2
+  exit 1
+fi
+
+# The ontology and its mapping are named even before they exist: the server
+# loads the model without them and picks them up once they are written.
+set -- --mcp-stdio --model dosi/model.yaml --ontology dosi/ontology.yaml \
+  --mapping dosi/mapping.yaml --env-file "$(dosi_secrets_file)"
+RUST_LOG=${RUST_LOG:-warn} exec "$server" "$@"
