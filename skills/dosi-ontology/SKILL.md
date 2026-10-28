@@ -40,8 +40,8 @@ dosi-ontologist subagent runs the same steps in the background; use it only
 when the user asks for that.)
 
 1. Read the model: `list_datasets` and the relationships in
-   `dosi/model.yaml`. Read the references with the file tools (Read, Grep),
-   not the shell. Start from the complete example in
+   `dosi/model.yaml`. Read the references by path with the Read tool, not
+   the shell. Start from the complete example in
    [references/](references/) (`example-orders.ontology.yaml`,
    `example-orders.mapping.yaml`, `model-orders.yaml`) and the rules in
    [references/ontology-authoring.md](references/ontology-authoring.md).

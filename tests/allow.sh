@@ -45,6 +45,18 @@ check ask "cat > dosi-connections.yaml <<'EOF'${nl}x${nl}EOF${nl}rm -rf ~"
 check ask "test -f x || cat > dosi-connections.yaml <<'EOF'${nl}x${nl}EOF"
 check ask "cat > ../dosi-connections.yaml <<'EOF'${nl}x${nl}EOF"
 check ask "cat > dosi/model.yaml <<'EOF'${nl}x${nl}EOF"
+# ... then one plain plugin command, on the next line or after &&.
+check allow "cat > dosi-connections.yaml <<'EOF'${nl}datasources:${nl}  local:${nl}    type: duckdb${nl}EOF${nl}dosi connection test local --format json"
+check allow "cat > dosi-connections.yaml <<'EOF' && dosi connection test local --format json${nl}datasources:${nl}EOF"
+check allow "cat > dosi-connections.yaml <<'EOF'${nl}x${nl}EOF${nl}${nl}dosi connection test local --format json${nl}"
+check ask "cat > dosi-connections.yaml <<'EOF'${nl}x${nl}EOF${nl}dosi connection test local; rm -rf ~"
+check ask "cat > dosi-connections.yaml <<'EOF'${nl}x${nl}EOF${nl}dosi connection test local${nl}dosi validate"
+check ask "cat > dosi-connections.yaml <<'EOF' && dosi connection test local${nl}x${nl}EOF${nl}dosi validate"
+check ask "cat > dosi-connections.yaml <<'EOF' && rm -rf ~${nl}x${nl}EOF"
+check ask "cat > dosi-connections.yaml <<'EOF'${nl}x${nl}EOF${nl}dosi query --where \"\$(id)\""
+check ask "cat > dosi-connections.yaml <<'EOF'${nl}x${nl}EOF${nl}dosi lineage view --out /tmp/x.html"
+check ask "cat > dosi/model.yaml <<'EOF'${nl}x${nl}EOF${nl}dosi validate"
+check ask "cat > dosi-connections.yaml <<EOF${nl}x${nl}EOF${nl}dosi validate"
 check allow 'echo dosi-connections.yaml >> .gitignore'
 check ask 'echo x >> .gitignore'
 check ask 'echo dosi-connections.yaml >> .gitignore; rm -rf ~'
