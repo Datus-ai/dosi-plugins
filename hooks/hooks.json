@@ -28,6 +28,16 @@
         ]
       },
       {
+        "matcher": "Read|Grep|Glob|Bash|Write|Edit|MultiEdit|apply_patch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/load-before-use.sh\"",
+            "timeout": 60
+          }
+        ]
+      },
+      {
         "matcher": "Bash|Read|Grep|Glob|Write|Edit|MultiEdit|Skill|mcp__plugin_dosi_dosi__.*",
         "hooks": [
           {

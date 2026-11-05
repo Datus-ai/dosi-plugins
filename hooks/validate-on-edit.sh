@@ -8,6 +8,7 @@ export DOSI_LIB_ROOT
 . "$DOSI_LIB_ROOT/hooks/lib.sh"
 
 payload=$(cat)
+printf '%s' "$payload" | python3 "$DOSI_LIB_ROOT/hooks/model-state.py" --after || exit $?
 tool=$(printf '%s' "$payload" | json_get tool_name)
 proj=$(dosi_project)
 if [ "$tool" = apply_patch ]; then

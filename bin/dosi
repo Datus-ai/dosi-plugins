@@ -16,13 +16,20 @@ want=$(dosi_min_version)
 # The project's model and ontology without --model: a model written earlier
 # in this session is not in the env file SessionStart wrote.
 proj=${CLAUDE_PROJECT_DIR:-$PWD}
-if [ -z "${DOSI_MODEL:-}" ] && [ -f "$proj/dosi/model.yaml" ]; then
+explicit_input=false
+for arg in "$@"; do
+  case "$arg" in
+    --model|--model=*|--ontology|--ontology=*|--mapping|--mapping=*) explicit_input=true ;;
+  esac
+done
+# Explicit inputs retain explicit companions, without unrelated project defaults.
+if [ "$explicit_input" = false ] && [ -z "${DOSI_MODEL:-}" ] && [ -f "$proj/dosi/model.yaml" ]; then
   DOSI_MODEL="$proj/dosi/model.yaml"; export DOSI_MODEL
 fi
-if [ -z "${DOSI_ONTOLOGY:-}" ] && [ -f "$proj/dosi/ontology.yaml" ]; then
+if [ "$explicit_input" = false ] && [ -z "${DOSI_ONTOLOGY:-}" ] && [ -f "$proj/dosi/ontology.yaml" ]; then
   DOSI_ONTOLOGY="$proj/dosi/ontology.yaml"; export DOSI_ONTOLOGY
 fi
-if [ -z "${DOSI_MAPPING:-}" ] && [ -f "$proj/dosi/mapping.yaml" ]; then
+if [ "$explicit_input" = false ] && [ -z "${DOSI_MAPPING:-}" ] && [ -f "$proj/dosi/mapping.yaml" ]; then
   DOSI_MAPPING="$proj/dosi/mapping.yaml"; export DOSI_MAPPING
 fi
 

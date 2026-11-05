@@ -48,7 +48,8 @@ function runHook(script, payload, cwd) {
     env: { ...process.env, CLAUDE_PROJECT_DIR: cwd },
     timeout: 120_000,
   })
-  return r.status === 2 ? (r.stderr || r.stdout || '').trim() : null
+  if (r.error || r.signal || r.status === null) return `Dosi hook ${script} did not finish; retry before using the model.`
+  return r.status !== 0 ? (r.stderr || r.stdout || `Dosi hook ${script} failed with status ${r.status}.`).trim() : null
 }
 
 function blocked(message) {
@@ -90,6 +91,8 @@ export function apply(ctx) {
     const payload = { tool_name: tool, tool_input: input, cwd }
     const denied = runHook('guard-config-read.sh', payload, cwd)
     if (denied) return blocked(denied)
+    const loadError = runHook('load-before-use.sh', payload, cwd)
+    if (loadError) return blocked(loadError)
     const result = await next()
     if (!WRITES.has(tool) || result?.isError) return result
     const problems = runHook('validate-on-edit.sh', payload, cwd)
