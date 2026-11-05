@@ -36,6 +36,7 @@ class ModelLoadingTests(unittest.TestCase):
             **os.environ, "CLAUDE_PROJECT_DIR": str(self.project),
             "DOSI_MODEL_STATE_DIR": str(self.project / "cache"),
             "DOSI_PLUGIN_DATA": str(self.project / "plugin-data"),
+            "DOSI_SECRETS_FILE": str(self.project / "absent-secrets"),
         }
         for key in ("DOSI_MODEL", "DOSI_MAPPING", "DOSI_ONTOLOGY", "DOSI_SECRETS_ENV"):
             self.env.pop(key, None)
@@ -68,12 +69,18 @@ class ModelLoadingTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
         self.assertIn("\nname: shop\n", self.model.read_text())
 
-    def test_first_write_requires_reread_after_native_replacement(self):
-        result = self.hook("Edit")
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("Read their current contents", result.stderr)
+    def test_first_write_continues_and_post_edit_loading_preserves_changes(self):
+        edited = HISTORICAL.replace("name: revenue", "name: gross_revenue")
+        result = self.hook("Write")
+        self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("\nname: shop\n", self.model.read_text())
-        self.assertEqual(self.hook("Edit").returncode, 0)
+        self.model.write_text(edited)
+        result = self.hook("Write", after=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("\nname: shop\n", self.model.read_text())
+        self.assertIn("name: gross_revenue", self.model.read_text())
+        backups = list(self.model.parent.glob(".*.bak"))
+        self.assertCountEqual([path.read_text() for path in backups], [HISTORICAL, edited])
 
     def test_external_historical_replacement_triggers_a_new_load(self):
         self.assertEqual(self.hook().returncode, 0)

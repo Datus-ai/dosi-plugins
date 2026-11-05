@@ -3,6 +3,7 @@
 
 This is ordinary model validation, not a YAML converter. Cache only stable
 versions actually loaded. The host may still read invalid files to repair them.
+A successful load does not reject an edit just because it normalized the file.
 """
 import hashlib
 import json
@@ -17,7 +18,6 @@ import tempfile
 ROOT = Path(__file__).resolve().parent.parent
 SUFFIXES = {".yaml", ".yml", ".json"}
 PROTECTED = {"profiles.yml", "dosi-connections.yaml", "secrets.env", ".env"}
-WRITES = {"Write", "Edit", "MultiEdit", "apply_patch", "Bash"}
 
 
 def targets(payload, project):
@@ -66,7 +66,7 @@ def main():
         cache = json.loads(cache_file.read_text())
     except (OSError, ValueError):
         cache = {}
-    changed, problems = [], []
+    problems = []
     version = subprocess.run([str(ROOT / "bin/dosi"), "--version"], cwd=project,
                              capture_output=True, text=True, timeout=10).stdout.strip()
     env = {k: v for k, v in os.environ.items() if k not in {"DOSI_MODEL", "DOSI_ONTOLOGY", "DOSI_MAPPING"}}
@@ -77,7 +77,6 @@ def main():
             if cached.get("error"):
                 problems.append(cached["error"])
             continue
-        original = before
         for _ in range(3):
             proc = subprocess.run([str(ROOT / "bin/dosi"), "--model", str(path), "--format", "json", "validate"],
                                   cwd=project, env=env, capture_output=True, text=True, timeout=50)
@@ -97,15 +96,9 @@ def main():
         else:
             print(f"{path} changed repeatedly during model loading; read it again.", file=sys.stderr)
             return 2
-        if current != original:
-            changed.append(str(path))
     with tempfile.NamedTemporaryFile(mode="w", dir=cache_dir, delete=False) as tmp:
         json.dump(cache, tmp)
     os.replace(tmp.name, cache_file)
-    if changed and not after and payload.get("tool_name") in WRITES:
-        print("Dosi refreshed these model files. Read their current contents before editing or rerunning the command: "
-              + ", ".join(changed), file=sys.stderr)
-        return 2
     if problems:
         message = "Model validation found errors; read the file to repair them:\n" + "\n".join(problems)
         if after:

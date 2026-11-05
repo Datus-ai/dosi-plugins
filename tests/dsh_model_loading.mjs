@@ -11,6 +11,7 @@ const originalPath = process.env.PATH
 try {
   process.env.DOSI_PLUGIN_DATA = join(root, 'plugin-data')
   process.env.DOSI_MODEL_STATE_DIR = join(root, 'cache')
+  process.env.DOSI_SECRETS_FILE = join(root, 'absent-secrets')
   for (const key of ['DOSI_MODEL', 'DOSI_ONTOLOGY', 'DOSI_MAPPING', 'DOSI_SECRETS_ENV']) delete process.env[key]
   const historical = `version: 0.2.0.dev0
 semantic_model:
@@ -41,15 +42,21 @@ semantic_model:
   assert.equal(read.isError, undefined)
   assert.equal(nextCalls, 1)
   assert.equal(readFileSync(join(projects[1], 'dosi/model.yaml'), 'utf8'), historical)
-  const write = await execute({ name: 'edit', arguments: { path: 'dosi/model.yaml' }, agent: { cwd: projects[1] } }, async () => {
+  const edited = historical.replace('  - name: shop\n', '  - name: shop\n    description: First edit\n')
+  const write = await execute({ name: 'write', arguments: { path: 'dosi/model.yaml', content: edited }, agent: { cwd: projects[1] } }, async () => {
     nextCalls++
-    throw new Error('a stale first edit must not reach the host editor')
+    assert.match(readFileSync(join(projects[1], 'dosi/model.yaml'), 'utf8'), /^name: shop$/m)
+    writeFileSync(join(projects[1], 'dosi/model.yaml'), edited)
+    return { content: [{ type: 'text', text: 'written' }] }
   })
-  assert.equal(write.isError, true)
-  assert.match(write.content[0].text, /Read their current contents/)
-  assert.equal(nextCalls, 1)
-  assert.match(readFileSync(join(projects[1], 'dosi/model.yaml'), 'utf8'), /^name: shop$/m)
-  console.log('DSH: read-before-next, first-edit refusal, and per-session paths passed')
+  assert.equal(write.isError, undefined)
+  assert.deepEqual(write.content, [{ type: 'text', text: 'written' }])
+  assert.equal(nextCalls, 2)
+  const current = readFileSync(join(projects[1], 'dosi/model.yaml'), 'utf8')
+  assert.match(current, /^name: shop$/m)
+  assert.match(current, /^description: First edit$/m)
+  assert.equal(readFileSync(join(projects[0], 'dosi/model.yaml'), 'utf8').includes('First edit'), false)
+  console.log('DSH: first-write continuation, post-edit migration, and per-session paths passed')
 } finally {
   process.env.PATH = originalPath
   rmSync(root, { recursive: true, force: true })
