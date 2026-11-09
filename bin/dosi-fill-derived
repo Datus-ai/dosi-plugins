@@ -23,12 +23,15 @@ message / hint).
 Exit status: 0 when it ran, 2 on a dosi or usage error.
 """
 import argparse
+import fcntl
 import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
+import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -166,13 +169,35 @@ def main():
         print(json.dumps({"error": f"no model at {a.model}"}))
         return 2
 
+    if a.dry_run:
+        with tempfile.TemporaryDirectory(prefix="dosi-preview-") as directory:
+            target = os.path.join(directory, os.path.basename(a.model))
+            shutil.copy2(a.model, target)
+            os.chmod(target, stat.S_IMODE(os.stat(target).st_mode) | stat.S_IWUSR)
+            a.model = target
+            return fill_model(a)
+    a.model = os.path.realpath(a.model)
+    return fill_model(a)
+
+
+def fill_model(a):
     # A derived metric's expansion is built from its members as they stand:
     # while a member still holds its placeholder, the dependent's expansion
     # is wrong too. Refill whatever comes back with a new expansion until
     # nothing changes.
     filled, missed, written = [], [], {}
     for _ in range(12):
-        verdict = validate(a.model)
+        for _attempt in range(3):
+            with open(a.model, "rb") as source:
+                before = source.read()
+            verdict = validate(a.model)
+            with open(a.model, "rb") as source:
+                snapshot = source.read()
+            if snapshot == before:
+                break
+        else:
+            print(json.dumps({"error": "model changed during validation; read it again and retry"}))
+            return 2
         if "error" in verdict:
             print(json.dumps({"error": "dosi validate failed", "detail": verdict["error"]}, ensure_ascii=False))
             return 2
@@ -182,9 +207,7 @@ def main():
         todo = [(n, s) for n, s in todo if n not in missed and written.get(n) != s]
         if not todo:
             break
-        with open(a.model, encoding="utf-8") as f:
-            text = f.read()
-        lines = text.split("\n")
+        lines = snapshot.decode("utf-8").split("\n")
         for name, sql in todo:
             if fill(lines, name, sql):
                 written[name] = sql
@@ -194,10 +217,26 @@ def main():
                 missed.append(name)
         if a.dry_run:
             break
-        tmp = a.model + ".fill.tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            f.write("\n".join(lines))
-        os.replace(tmp, a.model)
+        directory = os.path.dirname(a.model) or "."
+        lock_path = os.path.join(directory, "." + os.path.basename(a.model) + ".dosi.lock")
+        with open(lock_path, "a+b") as lock:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+            with open(a.model, "rb") as source:
+                if source.read() != snapshot:
+                    print(json.dumps({"error": "model changed during editing; read it again and retry"}))
+                    return 2
+            mode = stat.S_IMODE(os.stat(a.model).st_mode)
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=directory, delete=False) as f:
+                tmp = f.name
+                f.write("\n".join(lines))
+                f.flush()
+                os.fsync(f.fileno())
+            try:
+                os.chmod(tmp, mode)
+                os.replace(tmp, a.model)
+            finally:
+                if os.path.exists(tmp):
+                    os.unlink(tmp)
 
     verdict = validate(a.model) if not a.dry_run else verdict
     remaining = [{k: p.get(k) for k in ("code", "location", "message", "hint") if p.get(k)}

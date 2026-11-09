@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-dosi",
-  "version": "0.1.14",
+  "version": "0.1.15",
   "description": "Dosi semantic layer for DeepSeek Harness: connect a warehouse, build an Apache Ossie model, answer questions through governed metrics. Runs fully local.",
   "homepage": "https://dosi.datus.ai",
   "repository": { "type": "git", "url": "https://github.com/Datus-ai/dosi-plugins" },

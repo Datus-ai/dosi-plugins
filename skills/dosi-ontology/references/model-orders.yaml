@@ -1,102 +1,101 @@
 # The model example-orders.ontology.yaml maps onto (tables in a DuckDB file).
 version: "0.2.0.dev0"
 
-semantic_model:
-  - name: sales
-    description: Orders, customers and products (orders-200k.duckdb, 2024-01 to 2024-06)
-    datasets:
-      - name: orders
-        description: Order detail, one row per order
-        source: main.orders
-        primary_key: [order_id]
-        fields:
-          - name: order_id
-            description: Order id
-            expression: {dialects: [{dialect: ANSI_SQL, expression: order_id}]}
-          - name: customer_id
-            description: Id of the customer who placed the order
-            expression: {dialects: [{dialect: ANSI_SQL, expression: customer_id}]}
-          - name: product_id
-            description: Product id
-            expression: {dialects: [{dialect: ANSI_SQL, expression: product_id}]}
-          - name: order_date
-            description: Order date
-            expression: {dialects: [{dialect: ANSI_SQL, expression: order_date}]}
-            dimension:
-              is_time: true
-          - name: status
-            description: Order status (completed / cancelled)
-            expression: {dialects: [{dialect: ANSI_SQL, expression: status}]}
-          - name: amount
-            description: Order amount
-            expression: {dialects: [{dialect: ANSI_SQL, expression: amount}]}
+name: sales
+description: Orders, customers and products (orders-200k.duckdb, 2024-01 to 2024-06)
+datasets:
+  - name: orders
+    description: Order detail, one row per order
+    source: main.orders
+    primary_key: [order_id]
+    fields:
+      - name: order_id
+        description: Order id
+        expression: {dialects: [{dialect: ANSI_SQL, expression: order_id}]}
+      - name: customer_id
+        description: Id of the customer who placed the order
+        expression: {dialects: [{dialect: ANSI_SQL, expression: customer_id}]}
+      - name: product_id
+        description: Product id
+        expression: {dialects: [{dialect: ANSI_SQL, expression: product_id}]}
+      - name: order_date
+        description: Order date
+        expression: {dialects: [{dialect: ANSI_SQL, expression: order_date}]}
+        dimension:
+          is_time: true
+      - name: status
+        description: Order status (completed / cancelled)
+        expression: {dialects: [{dialect: ANSI_SQL, expression: status}]}
+      - name: amount
+        description: Order amount
+        expression: {dialects: [{dialect: ANSI_SQL, expression: amount}]}
 
-      - name: customers
-        description: Customers
-        source: main.customers
-        primary_key: [customer_id]
-        fields:
-          - name: customer_id
-            description: Customer id
-            expression: {dialects: [{dialect: ANSI_SQL, expression: customer_id}]}
-          - name: region
-            description: The customer's region (north/east/south/west)
-            expression: {dialects: [{dialect: ANSI_SQL, expression: region}]}
-          - name: signup_date
-            description: Customer signup date
-            expression: {dialects: [{dialect: ANSI_SQL, expression: signup_date}]}
-            dimension:
-              is_time: true
+  - name: customers
+    description: Customers
+    source: main.customers
+    primary_key: [customer_id]
+    fields:
+      - name: customer_id
+        description: Customer id
+        expression: {dialects: [{dialect: ANSI_SQL, expression: customer_id}]}
+      - name: region
+        description: The customer's region (north/east/south/west)
+        expression: {dialects: [{dialect: ANSI_SQL, expression: region}]}
+      - name: signup_date
+        description: Customer signup date
+        expression: {dialects: [{dialect: ANSI_SQL, expression: signup_date}]}
+        dimension:
+          is_time: true
 
-      - name: products
-        description: Products
-        source: main.products
-        primary_key: [product_id]
-        fields:
-          - name: product_id
-            description: Product id
-            expression: {dialects: [{dialect: ANSI_SQL, expression: product_id}]}
-          - name: category
-            description: Product category (home/electronics/books/toys)
-            expression: {dialects: [{dialect: ANSI_SQL, expression: category}]}
-          - name: unit_cost
-            description: Product unit cost
-            expression: {dialects: [{dialect: ANSI_SQL, expression: unit_cost}]}
+  - name: products
+    description: Products
+    source: main.products
+    primary_key: [product_id]
+    fields:
+      - name: product_id
+        description: Product id
+        expression: {dialects: [{dialect: ANSI_SQL, expression: product_id}]}
+      - name: category
+        description: Product category (home/electronics/books/toys)
+        expression: {dialects: [{dialect: ANSI_SQL, expression: category}]}
+      - name: unit_cost
+        description: Product unit cost
+        expression: {dialects: [{dialect: ANSI_SQL, expression: unit_cost}]}
 
-    relationships:
-      - name: orders_to_customers
-        from: orders
-        to: customers
-        from_columns: [customer_id]
-        to_columns: [customer_id]
-      - name: orders_to_products
-        from: orders
-        to: products
-        from_columns: [product_id]
-        to_columns: [product_id]
+relationships:
+  - name: orders_to_customers
+    from: orders
+    to: customers
+    from_columns: [customer_id]
+    to_columns: [customer_id]
+  - name: orders_to_products
+    from: orders
+    to: products
+    from_columns: [product_id]
+    to_columns: [product_id]
 
-    metrics:
-      - name: revenue
-        description: "Revenue: amount of completed orders, cancelled ones excluded"
-        expression: {dialects: [{dialect: ANSI_SQL, expression: "SUM(CASE WHEN orders.status = 'completed' THEN orders.amount END)"}]}
-      - name: gross_order_amount
-        description: "Gross order amount: all orders, cancelled ones included"
-        expression: {dialects: [{dialect: ANSI_SQL, expression: SUM(orders.amount)}]}
-      - name: order_count
-        description: "Order count: all orders, cancelled ones included"
-        expression: {dialects: [{dialect: ANSI_SQL, expression: COUNT(orders.order_id)}]}
-      - name: completed_order_count
-        description: Completed orders
-        expression: {dialects: [{dialect: ANSI_SQL, expression: "COUNT(CASE WHEN orders.status = 'completed' THEN orders.order_id END)"}]}
-      - name: cancelled_order_count
-        description: Cancelled orders
-        expression: {dialects: [{dialect: ANSI_SQL, expression: "COUNT(CASE WHEN orders.status = 'cancelled' THEN orders.order_id END)"}]}
-      - name: cancellation_rate
-        description: "Cancellation rate: cancelled orders / all orders"
-        expression: {dialects: [{dialect: ANSI_SQL, expression: "COUNT(CASE WHEN orders.status = 'cancelled' THEN orders.order_id END) / COUNT(orders.order_id)"}]}
-      - name: avg_order_value
-        description: "Average order value: revenue / completed orders"
-        expression: {dialects: [{dialect: ANSI_SQL, expression: "SUM(CASE WHEN orders.status = 'completed' THEN orders.amount END) / COUNT(CASE WHEN orders.status = 'completed' THEN orders.order_id END)"}]}
-      - name: buyer_count
-        description: "Ordering customers: distinct customers with any order, cancelled ones included"
-        expression: {dialects: [{dialect: ANSI_SQL, expression: COUNT(DISTINCT orders.customer_id)}]}
+metrics:
+  - name: revenue
+    description: "Revenue: amount of completed orders, cancelled ones excluded"
+    expression: {dialects: [{dialect: ANSI_SQL, expression: "SUM(CASE WHEN orders.status = 'completed' THEN orders.amount END)"}]}
+  - name: gross_order_amount
+    description: "Gross order amount: all orders, cancelled ones included"
+    expression: {dialects: [{dialect: ANSI_SQL, expression: SUM(orders.amount)}]}
+  - name: order_count
+    description: "Order count: all orders, cancelled ones included"
+    expression: {dialects: [{dialect: ANSI_SQL, expression: COUNT(orders.order_id)}]}
+  - name: completed_order_count
+    description: Completed orders
+    expression: {dialects: [{dialect: ANSI_SQL, expression: "COUNT(CASE WHEN orders.status = 'completed' THEN orders.order_id END)"}]}
+  - name: cancelled_order_count
+    description: Cancelled orders
+    expression: {dialects: [{dialect: ANSI_SQL, expression: "COUNT(CASE WHEN orders.status = 'cancelled' THEN orders.order_id END)"}]}
+  - name: cancellation_rate
+    description: "Cancellation rate: cancelled orders / all orders"
+    expression: {dialects: [{dialect: ANSI_SQL, expression: "COUNT(CASE WHEN orders.status = 'cancelled' THEN orders.order_id END) / COUNT(orders.order_id)"}]}
+  - name: avg_order_value
+    description: "Average order value: revenue / completed orders"
+    expression: {dialects: [{dialect: ANSI_SQL, expression: "SUM(CASE WHEN orders.status = 'completed' THEN orders.amount END) / COUNT(CASE WHEN orders.status = 'completed' THEN orders.order_id END)"}]}
+  - name: buyer_count
+    description: "Ordering customers: distinct customers with any order, cancelled ones included"
+    expression: {dialects: [{dialect: ANSI_SQL, expression: COUNT(DISTINCT orders.customer_id)}]}
