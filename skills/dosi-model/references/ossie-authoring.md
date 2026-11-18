@@ -9,7 +9,7 @@ https://dosi.datus.ai/datus-extensions/.
 
 Replace `<dialect>` with the warehouse's expression dialect (`POSTGRESQL`,
 `SNOWFLAKE`, …; `ANSI_SQL` works everywhere) and `<v>` with the contract's
-version (`envelope.version.generated_value`, e.g. `1.12`).
+version (`envelope.version.generated_value`, e.g. `1.14`).
 
 ```yaml
 version: 0.2.0.dev0

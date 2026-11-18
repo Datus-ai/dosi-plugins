@@ -149,7 +149,7 @@ Claude 永远看不到你的密码。需要口令时，它在配置里写一个 
 |---|---|
 | `skills/dosi-connect` | 连接数仓或本地文件。用 `dosi migrate conf` 转换 dbt / Cube 配置。密钥不会进入对话 |
 | `skills/dosi-model` | 生成和编辑 `dosi/model.yaml`（Apache Ossie） |
-| `skills/dosi-query` | 用指标（`query`）、明细记录（`select`）和变化归因（`attribute`）回答问题 |
+| `skills/dosi-query` | 用指标（`query`）、明细记录（`select`）和变化归因（`attribute-metrics`、`attribute-dimensions`）回答问题 |
 | `skills/dosi-view` | 在对话中和本地 HTML 页面里展示指标血缘与 ontology 图 |
 | `skills/dosi-ontology` | 构建 `dosi/ontology.yaml`，并按业务概念回答问题 |
 | `skills/dosi-upgrade` | 告诉你当前运行的 dosi 版本，并在你要求时安装新版本 |

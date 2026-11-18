@@ -173,7 +173,7 @@ supported yet; use key-pair auth or a password instead.
 |---|---|
 | `skills/dosi-connect` | Connects to a warehouse or local file. Converts dbt / Cube settings with `dosi migrate conf`. Secrets never enter the chat |
 | `skills/dosi-model` | Generates and edits `dosi/model.yaml` (Apache Ossie) |
-| `skills/dosi-query` | Answers with metrics (`query`), records (`select`) and change attribution (`attribute`) |
+| `skills/dosi-query` | Answers with metrics (`query`), records (`select`) and change attribution (`attribute-metrics`, `attribute-dimensions`) |
 | `skills/dosi-view` | Shows metric lineage and the ontology graph, in the chat and as a local HTML page |
 | `skills/dosi-ontology` | Builds `dosi/ontology.yaml` and answers questions by business concept |
 | `skills/dosi-upgrade` | Says which dosi runs and installs a newer release when you ask |

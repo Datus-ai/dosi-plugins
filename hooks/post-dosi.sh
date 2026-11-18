@@ -43,7 +43,7 @@ case "$tool" in
     case "${tool#mcp__plugin_dosi_dosi__}" in
       run_query) [ $in_subagent -eq 0 ] && "$p" record queried && offer ;;
       select) [ $in_subagent -eq 0 ] && { "$p" record select; "$p" record queried; offer; } ;;
-      attribute_metric) [ $in_subagent -eq 0 ] && "$p" record queried && offer ;;
+      attribute_metrics|attribute_dimensions) [ $in_subagent -eq 0 ] && "$p" record queried && offer ;;
     esac
     has 'ambiguous_join_path' && "$p" record ambiguous
     exit 0 ;;
