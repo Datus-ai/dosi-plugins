@@ -64,6 +64,8 @@ esac
 case "$cmd" in
   *" select "*"--execute"*|*" select "*"--execute") "$p" record select; "$p" record queried; offer ;;
   *" query "*"--execute"*|*" query "*"--execute") has 'rows' && "$p" record queried && offer ;;
+  *--dry-run*) ;;
+  *" attribute-metrics "*|*" attribute-dimensions "*) has '\\"status\\":\|"status":' && "$p" record queried && offer ;;
 esac
 case "$cmd" in *" lineage "*) "$p" record lineage ;; esac
 has 'ambiguous_join_path' && "$p" record ambiguous

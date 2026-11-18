@@ -98,12 +98,16 @@ ask once.
 3. One small line: `<connection> · <n> rows`.
 
 State only what the results show. When you explain a total by its parts,
-list every part and make sure they add up. An attribution's effects add up
-to the change: a part's effect is how much it moved the metric, not why the
-part itself moved, and a share above 100% means other parts pulled the other
-way. Give the SQL only when the user asks for it (`include_sql: true` on the
-MCP tools, or the CLI without `--execute`). "How is this computed?" → the
+list every part and make sure they add up. Give the SQL only when the user
+asks for it (`include_sql: true` on `run_query` and `select`, or `dosi
+query` / `dosi select` without `--execute`). "How is this computed?" → the
 dosi-view skill.
+
+An attribution's effects add up to the change. A part's effect is how much
+it moved the metric, not why the part itself moved. `share` is the effect
+over the whole change (1 is all of it), so a share above 1 or below 0 means
+other parts moved the other way. When `status` is not `complete`, report its
+`issues` instead of the numbers.
 
 ## 4. When dosi refuses
 

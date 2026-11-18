@@ -9,7 +9,7 @@
 #   * one plain command of the plugin's (dosi, dosi-progress, dosi-reconcile,
 #     dosi-fill-derived, dosi-upgrade): quoted arguments are fine, but no $,
 #     backquote, redirection, pipe, chaining, glob, second line, or path
-#     outside the project;
+#     outside the project (a period YYYY-MM-DD..YYYY-MM-DD is not a path);
 #   * writing dosi-connections.yaml with a quoted here-document (the file
 #     editor would echo the password back, see the guard), optionally followed
 #     by one plain plugin command as above, after `&&` on its first line or on
@@ -34,6 +34,8 @@ plain_command() {
   printf '%s\n' "$1" | LC_ALL=C awk '
     NR > 1 { bad = 1 }
     NR == 1 { line = $0 }
+    # A period START..END (attribute-metrics --baseline) is not a path.
+    BEGIN { d = "[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]"; range = d "\\.\\." d }
     END {
       if (bad) { print "no"; exit }
       s = line; out = ""
@@ -44,13 +46,15 @@ plain_command() {
           if (k == 0) { print "no"; exit }
           body = substr(r, 1, k - 1)
           if (c == "\"" && body ~ /[$`\\]/) { print "no"; exit }
-          if (body ~ /^[\/~]/ || body ~ /\.\./) { print "no"; exit }
+          b = body; gsub(range, "", b)
+          if (body ~ /^[\/~]/ || b ~ /\.\./) { print "no"; exit }
           out = out "Q"; s = substr(r, k + 1); continue
         }
         out = out c; s = substr(s, 2)
       }
       if (out !~ /^(dosi|dosi-progress|dosi-reconcile|dosi-fill-derived|dosi-upgrade)( |$)/) { print "no"; exit }
       if (out ~ /[^A-Za-z0-9 _.,:=\/@%+Q-]/) { print "no"; exit }
+      gsub(range, "D", out)
       if (out ~ /\.\./ || out ~ /(^| |=)\//) { print "no"; exit }
       print "yes"
     }'

@@ -21,6 +21,11 @@ check allow 'dosi-fill-derived'
 check allow 'dosi-upgrade --check'
 check allow 'dosi-progress answer h_ontology later'
 check allow 'dosi --model dosi/build/trial.yaml query --format json --execute --metrics revenue'
+check allow 'dosi attribute-dimensions --format json --metric revenue --baseline 2026-08-01..2026-09-01 --current 2026-09-01..2026-10-01 --dimensions customers.region'
+check allow "dosi attribute-metrics --format json --metric revenue --baseline '2026-08-01..2026-09-01' --current 2026-09-01..2026-10-01"
+check ask 'dosi attribute-metrics --metric revenue --baseline 2026-08-01../etc --current 2026-09-01..2026-10-01'
+check ask 'dosi attribute-metrics --model ../2026-08-01..2026-09-01/m.yaml --metric revenue'
+check ask "dosi attribute-metrics --metric revenue --where '2026-08-01..2026-09-01/..'"
 check ask 'dosi query --where "$(cat dosi/build/w.sql)" --format json'
 check ask 'dosi query --where "`id`"'
 check ask 'dosi validate --format json | head'

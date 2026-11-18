@@ -73,7 +73,8 @@ dosi attribute-dimensions --format json --metric revenue \
 | `--connection <name>` / `--db <file.duckdb>` | where to run |
 | `--dry-run` | compile every statement a run would send and say whether anything refuses it, without running |
 
-Without `--dimensions`, dosi answers `dimensions_required` with the
-`candidates` worth splitting by — pick from those. A node of the
+When `status` is not `complete`, `issues` say why; report them rather than
+the numbers. Without `--dimensions`, dosi answers `dimensions_required` with
+the `candidates` worth splitting by — pick from those. A node of the
 `attribute-metrics` tree that names a `metric` can itself be split with
 `attribute-dimensions`.
