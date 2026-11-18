@@ -43,7 +43,7 @@ case "$tool" in
     case "${tool#mcp__plugin_dosi_dosi__}" in
       run_query) [ $in_subagent -eq 0 ] && "$p" record queried && offer ;;
       select) [ $in_subagent -eq 0 ] && { "$p" record select; "$p" record queried; offer; } ;;
-      attribute_metric) [ $in_subagent -eq 0 ] && "$p" record queried && offer ;;
+      attribute_metrics|attribute_dimensions) [ $in_subagent -eq 0 ] && "$p" record queried && offer ;;
     esac
     has 'ambiguous_join_path' && "$p" record ambiguous
     exit 0 ;;
@@ -64,6 +64,8 @@ esac
 case "$cmd" in
   *" select "*"--execute"*|*" select "*"--execute") "$p" record select; "$p" record queried; offer ;;
   *" query "*"--execute"*|*" query "*"--execute") has 'rows' && "$p" record queried && offer ;;
+  *--dry-run*) ;;
+  *" attribute-metrics "*|*" attribute-dimensions "*) has '\\"status\\":\|"status":' && "$p" record queried && offer ;;
 esac
 case "$cmd" in *" lineage "*) "$p" record lineage ;; esac
 has 'ambiguous_join_path' && "$p" record ambiguous

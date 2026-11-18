@@ -10,7 +10,8 @@ allowed-tools:
   - mcp__plugin_dosi_dosi__describe_dataset
   - mcp__plugin_dosi_dosi__run_query
   - mcp__plugin_dosi_dosi__select
-  - mcp__plugin_dosi_dosi__attribute_metric
+  - mcp__plugin_dosi_dosi__attribute_metrics
+  - mcp__plugin_dosi_dosi__attribute_dimensions
   - mcp__plugin_dosi_dosi__describe
   - mcp__plugin_dosi_dosi__paths
 ---
@@ -40,7 +41,8 @@ Prefer dosi's MCP tools (server `dosi`); without them the CLI with
 | one metric's definition and required dimensions | `describe_metric` | `dosi show metric m` |
 | a number, trend, breakdown, ranking | `run_query` | `dosi query --execute` |
 | a list of records | `select` | `dosi select --execute` |
-| why a metric moved between two periods | `attribute_metric` | `dosi attribute` |
+| which part of a metric's formula moved it between two periods | `attribute_metrics` | `dosi attribute-metrics` |
+| which groups (regions, products, …) moved it | `attribute_dimensions` | `dosi attribute-dimensions` |
 
 On a large model, find metric names with `grep -n -B2 '<term>' dosi/model.yaml`
 instead of listing them all. Run dosi as it is, without pipes; narrow the
@@ -59,6 +61,14 @@ Shapes dosi takes (CLI flags in [references/query-shapes.md](references/query-sh
   field's last segment with `__<grain>` (`region`, `metric_time__month`).
   In `select`, the root dataset's fields are bare and another dataset's are
   `<dataset>__<field>`. An `unknown_order_key` error lists the valid keys.
+- `attribute_metrics` / `attribute_dimensions`: `metric`; `baseline` and
+  `current` as `{"start": "2024-08-01", "end": "2024-09-01"}` (end
+  exclusive); `where_sql`, `context_filter`, `params` as in `run_query`, one
+  value per parameter. `attribute_dimensions` adds `dimensions`
+  (`["customers.region"]`): several are one drill-down, level by level, so
+  two separate views are two calls. Without `dimensions` the error's
+  `candidates` are the fields to split by; when `describe_metric`'s
+  `attribution.dimensions` has `only_by`, use only those.
 
 ## 1. Before querying
 
@@ -89,8 +99,15 @@ ask once.
 
 State only what the results show. When you explain a total by its parts,
 list every part and make sure they add up. Give the SQL only when the user
-asks for it (`include_sql: true` on the MCP tools, or the CLI without
-`--execute`). "How is this computed?" → the dosi-view skill.
+asks for it (`include_sql: true` on `run_query` and `select`, or `dosi
+query` / `dosi select` without `--execute`). "How is this computed?" → the
+dosi-view skill.
+
+An attribution's effects add up to the change. A part's effect is how much
+it moved the metric, not why the part itself moved. `share` is the effect
+over the whole change (1 is all of it), so a share above 1 or below 0 means
+other parts moved the other way. When `status` is not `complete`, report its
+`issues` instead of the numbers.
 
 ## 4. When dosi refuses
 
